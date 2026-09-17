@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.4 - 2026-09-17
+
+- **Nuovo Centro di controllo grafico** (`tools/aniimo_it_gui.py` + `Avvia_Traduzione_GUI.bat`): interfaccia Tkinter con mascotte animata, tema pastello e musichetta chiptune sintetizzata al volo. Mostra in un colpo d'occhio gioco rilevato e build, stato installazione traduzione (versione e % corrispondenza), allineamento alla patch corrente (incluse eventuali stringhe nuove in fallback inglese) e novità da GitHub; pulsanti per applicare la traduzione, ripristinare il backup, scegliere/aprire la cartella del gioco e aprire le release, con registro attività in streaming.
+- Zero nuove dipendenze (solo standard library); operazioni in thread separato per non bloccare l'interfaccia; nessuna logica duplicata — la GUI riusa le funzioni testate dell'installer CLI (`collect_startup_status`, `cmd_install`, `cmd_restore`, `check_for_updates`).
+- Testi della traduzione invariati rispetto alla v0.4.3.
+
 ## 0.4.3 - 2026-09-17
 
 - Audit indipendente di fedeltà eseguito su installazione reale (Steam, update `3544783`, revisione `dbb6cb6c…`): copertura 112.187/112.187 chiavi, fingerprint build combaciante, pairing SHA-256 per chiave 112.187/112.187, 0 violazioni di placeholder/newline/spazi, 0 residui inglesi, 0 errori di significato nel campione stratificato di 324 coppie. Report completo in `AUDIT_FIDELITA_v0.4.2.md`.

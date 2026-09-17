@@ -1,6 +1,6 @@
 {
   "project": "Aniimo Italian Translation",
-  "translation_version": "0.4.3",
+  "translation_version": "0.4.4",
   "github_repo": "notorious-pizza/Aniimo-Italian-Translation",
   "github_releases_url": "https://github.com/notorious-pizza/Aniimo-Italian-Translation/releases",
   "locale": "it-IT",
@@ -18,7 +18,7 @@
   "tested_game_revision": null,
   "tested_archive_sha256": "1453295f7ce585e218ae625cc164c7c56b5ac30876504194326ee92a92b29cbb",
   "tested_date": "2026-09-17",
-  "coverage": "112187/112187 keys translated (100.00%). Steam build 3544783 full professional coverage. v0.4.3: independent fidelity audit passed, 3 terminology fixes applied.",
+  "coverage": "112187/112187 keys translated (100.00%). Steam build 3544783 full professional coverage. v0.4.3: independent fidelity audit passed, 3 terminology fixes applied. v0.4.4: GUI control center, texts unchanged.",
   "github_project_url": "https://github.com/notorious-pizza/Aniimo-Italian-Translation",
   "github_issues_url": "https://github.com/notorious-pizza/Aniimo-Italian-Translation/issues",
   "support_url": "https://buymeacoffee.com/sici29",
