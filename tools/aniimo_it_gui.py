@@ -7,12 +7,19 @@ Interfaccia amichevole (Tkinter, solo standard library) per:
 - applicare la traduzione o ripristinare il backup con un clic;
 - controllare le novità su GitHub.
 
-Riusa le stesse funzioni testate dell'installer CLI (tools/aniimo_it_installer.py):
-nessuna logica duplicata. Musica: mini-tema chiptune sintetizzato al volo.
+Riusa le stesse funzioni testate dell'installer CLI (tools/aniimo_it_installer.py).
+Musica: mini-tema chiptune sintetizzato al volo.
+
+REGOLA DI LAYOUT (lezione imparata): nessuna coordinata "magica". Ogni
+posizione/altezza deriva dalle metriche MISURATE dei font reali, così il
+layout resta corretto a qualsiasi scaling DPI. Ogni testo ha un'ancora
+esplicita e una larghezza massima con ellissi. `--check` verifica a coppie
+che nessun elemento si sovrapponga.
 """
 
 from __future__ import annotations
 
+import ctypes
 import json
 import math
 import random
@@ -25,6 +32,7 @@ import wave
 from argparse import Namespace
 from pathlib import Path
 import tkinter as tk
+import tkinter.font as tkfont
 from tkinter import filedialog, messagebox
 
 TOOLS_DIR = Path(__file__).resolve().parent
@@ -38,7 +46,8 @@ except ImportError:  # sviluppo fuori Windows
     HAVE_WINSOUND = False
 
 APP_TITLE = "Aniimo · Traduzione Italiana — Centro di controllo"
-W, H = 800, 760
+W = 800  # larghezza logica fissa; l'altezza è calcolata dalle metriche
+
 GUI_SETTINGS = inst.USER_WORK_DIR / "gui_settings.json"
 THEME_WAV = inst.USER_WORK_DIR / "theme.wav"
 
@@ -60,11 +69,27 @@ SKY = "#A8DCF5"
 BUBBLE_COLORS = ["#FFE3EC", "#DFF6EC", "#EAE4FF", "#FFF1D6", "#DCEFFF"]
 LOG_BG = "#332A45"
 
+HERO_OK = ("#DFF6EC", "#BFE3D4", "#2E6B57")
+HERO_WARN = ("#FFF1D6", "#E8D5A8", "#8A6A2F")
+HERO_BAD = ("#FFE3EC", "#F3B7C8", "#B4435C")
+
 NOTE_FREQ = {
     "F3": 174.61, "G3": 196.00, "A3": 220.00, "C3": 130.81,
     "A4": 440.00, "C5": 523.25, "D5": 587.33, "E5": 659.25, "G5": 783.99, "A5": 880.00,
     "C6": 1046.50, "E6": 1318.51, "G6": 1567.98,
 }
+
+
+def enable_dpi_awareness() -> None:
+    """Font coerenti con lo scaling reale del display (niente sorprese DPI)."""
+    if sys.platform == "win32":
+        try:
+            try:
+                ctypes.windll.shcore.SetProcessDpiAwareness(2)
+            except Exception:
+                ctypes.windll.user32.SetProcessDPIAware()
+        except Exception:
+            pass
 
 
 # --------------------------------------------------------------------------
@@ -81,7 +106,6 @@ def ensure_theme_wav() -> Path:
     total = int(steps * eighth * sr) + sr
     buf = [0.0] * total
 
-    # melodia allegra in pentatonica di Do maggiore (None = pausa)
     melody = [
         "E5", "G5", "A5", "G5",  "E5", "D5", "C5", None,
         "D5", "E5", "G5", "E5",  "D5", "C5", "A4", None,
@@ -92,7 +116,6 @@ def ensure_theme_wav() -> Path:
         "C5", "E5", "G5", "A5",  "G5", "E5", "D5", "C5",
         "D5", "E5", "D5", "C5",  "C5", None, None, None,
     ]
-    # basso: Do - Do - Lam - Lam - Fa - Fa - Sol - Sol (una battuta ciascuno)
     bass_bars = ["C3", "C3", "A3", "A3", "F3", "F3", "G3", "G3"]
 
     def add_note(freq: float, start: float, dur: float, amp: float) -> None:
@@ -111,15 +134,14 @@ def ensure_theme_wav() -> Path:
     for bar, root in enumerate(bass_bars):
         for beat in range(4):
             add_note(NOTE_FREQ[root], (bar * 8 + beat * 2) * eighth, eighth * 1.5, 0.09)
-    for bar in range(8):  # luccichio sull'ultimo ottavo di battuta
+    for bar in range(8):
         add_note(NOTE_FREQ[("C6", "E6", "G6")[bar % 3]], (bar * 8 + 7) * eighth, eighth * 0.8, 0.05)
 
     peak = max(1e-9, max(abs(v) for v in buf))
     scale = 0.22 * 32767.0 / peak
     frames = bytearray()
     for v in buf:
-        sample = int(max(-32767.0, min(32767.0, v * scale)))
-        frames += struct.pack("<h", sample)
+        frames += struct.pack("<h", int(max(-32767.0, min(32767.0, v * scale))))
     with wave.open(str(THEME_WAV), "wb") as wf:
         wf.setnchannels(1)
         wf.setsampwidth(2)
@@ -158,32 +180,71 @@ class QueueWriter:
         pass
 
 
-def rounded_rect(cv: tk.Canvas, x1, y1, x2, y2, r, **kw) -> int:
-    pts = [
-        x1 + r, y1, x2 - r, y1, x2, y1, x2, y1 + r, x2, y2 - r, x2, y2,
-        x2 - r, y2, x1 + r, y2, x1, y2, x1, y2 - r, x1, y1 + r, x1, y1,
-    ]
+class Metrics:
+    """Font reali + misure; il layout dipende solo da questi numeri."""
+
+    def __init__(self, root: tk.Misc):
+        mk = lambda spec: tkfont.Font(root=root, font=spec)  # noqa: E731
+        self.huge = mk(("Segoe UI", 15, "bold"))
+        self.sub = mk(("Segoe UI", 9))
+        self.ital = mk(("Segoe UI", 9, "italic"))
+        self.hero = mk(("Segoe UI", 11, "bold"))
+        self.card_t = mk(("Segoe UI", 9, "bold"))
+        self.card_v = mk(("Segoe UI", 11, "bold"))
+        self.card_s = mk(("Segoe UI", 8))
+        self.btn = mk(("Segoe UI", 10, "bold"))
+        self.btn_s = mk(("Segoe UI", 9, "bold"))
+        self.logt = mk(("Segoe UI", 9, "bold"))
+        self.log = mk(("Consolas", 9))
+        self.foot = mk(("Segoe UI", 8))
+        self.icon = mk(("Segoe UI Symbol", 12, "bold"))
+
+    def line(self, f: tkfont.Font) -> int:
+        return f.metrics("linespace")
+
+    def fit(self, text: str, f: tkfont.Font, max_w: float) -> str:
+        """Tronca con ellissi finché il testo non entra in max_w."""
+        if f.measure(text) <= max_w or not text:
+            return text
+        ell = "…"
+        while text and f.measure(text + ell) > max_w:
+            text = text[:-1]
+        return text + ell
+
+
+def dense_round_rect(cv: tk.Canvas, x1, y1, x2, y2, r, steps: int = 5, **kw) -> int:
+    """Rettangolo angolato con archi campionati: smooth senza rigonfiamenti."""
+    r = max(2.0, min(r, (y2 - y1) / 2 - 1, (x2 - x1) / 2 - 1))
+    pts: list[float] = [x1 + r, y1, x2 - r, y1]
+
+    def arc(cx: float, cy: float, a0: float, a1: float) -> None:
+        for i in range(1, steps + 1):
+            a = math.radians(a0 + (a1 - a0) * i / steps)
+            pts.extend((cx + r * math.cos(a), cy + r * math.sin(a)))
+
+    arc(x2 - r, y1 + r, -90, 0)
+    pts.extend((x2, y1 + r, x2, y2 - r))
+    arc(x2 - r, y2 - r, 0, 90)
+    pts.extend((x2 - r, y2, x1 + r, y2))
+    arc(x1 + r, y2 - r, 90, 180)
+    pts.extend((x1, y2 - r, x1, y1 + r))
+    arc(x1 + r, y1 + r, 180, 270)
     return cv.create_polygon(pts, smooth=True, **kw)
-
-
-def short_path(text: str, keep: int = 46) -> str:
-    """Abbrevia i percorsi lunghi con ellissi centrale (inizio + coda significativa)."""
-    if len(text) <= keep:
-        return text
-    return text[:16] + "…" + text[-(keep - 17):]
 
 
 class RoundButton:
     """Pulsante disegnato su canvas, con hover e stato disabilitato."""
 
-    def __init__(self, cv: tk.Canvas, x, y, w, h, label, color, dark, cmd, *, font=("Segoe UI", 11, "bold")):
+    def __init__(self, cv: tk.Canvas, x, y, w, h, label, color, dark, cmd, m: Metrics,
+                 *, big: bool = True):
         self.cv, self.x, self.y, self.w, self.h = cv, x, y, w, h
         self.color, self.dark, self.cmd = color, dark, cmd
         self.enabled = True
-        self.r = min(16.0, h / 2)
-        self.body = rounded_rect(cv, x - w / 2, y - h / 2, x + w / 2, y + h / 2, self.r,
-                                 fill=color, outline=dark, width=2)
-        self.txt = cv.create_text(x, y, text=label, fill="white", font=font)
+        self.body = dense_round_rect(cv, x - w / 2, y - h / 2, x + w / 2, y + h / 2,
+                                     min(14.0, h / 2 - 2), fill=color, outline=dark, width=2)
+        self.txt = cv.create_text(x, y, text=label, fill="white",
+                                  font=m.btn if big else m.btn_s)
+        self.bbox = (x - w / 2, y - h / 2, x + w / 2, y + h / 2)
         for item in (self.body, self.txt):
             cv.tag_bind(item, "<Button-1>", self._click)
             cv.tag_bind(item, "<Enter>", self._hover)
@@ -217,26 +278,37 @@ class RoundButton:
 
 
 class Card:
-    """Card di stato: badge colorato, titolo, riga principale e sottotitolo."""
+    """Card di stato: badge, titolo, riga principale e sottotitolo — tutti vincolati."""
 
-    def __init__(self, cv: tk.Canvas, x1, y1, x2, y2, icon: str, title: str):
-        self.cv = cv
-        rounded_rect(cv, x1, y1, x2, y2, 18, fill=CARD, outline="#EFE6DC", width=2)
-        cx = x1 + 36
-        self.badge = cv.create_oval(cx - 15, y1 + 20, cx + 15, y1 + 50, fill=SUN, outline="")
-        cv.create_text(cx, y1 + 35, text=icon, font=("Segoe UI Symbol", 14, "bold"), fill="white")
-        cv.create_text(x1 + 60, y1 + 16, text=title, anchor="nw", font=("Segoe UI", 10, "bold"), fill=INK_SOFT)
-        self.value = cv.create_text(x1 + 60, y1 + 38, text="…", anchor="nw", font=("Segoe UI", 13, "bold"), fill=INK)
-        self.sub = cv.create_text(x1 + 18, y2 - 12, text="", anchor="sw", font=("Segoe UI", 9), fill=INK_SOFT)
+    def __init__(self, cv: tk.Canvas, x1, y1, x2, y2, icon: str, title: str, m: Metrics):
+        self.cv, self.x1, self.y1, self.x2, self.y2 = cv, x1, y1, x2, y2
+        self.m = m
+        dense_round_rect(cv, x1, y1, x2, y2, 14, fill=CARD, outline="#EFE6DC", width=2)
+        badge_d = min(30.0, (y2 - y1) * 0.38)
+        bcx = x1 + badge_d / 2 + 12
+        bcy = y1 + (y2 - y1) / 2
+        self.badge = cv.create_oval(bcx - badge_d / 2, bcy - badge_d / 2,
+                                    bcx + badge_d / 2, bcy + badge_d / 2, fill=SUN, outline="")
+        cv.create_text(bcx, bcy, text=icon, font=m.icon, fill="white")
+        tx = x1 + badge_d + 26
+        self.max_w = x2 - tx - 12
+        cv.create_text(tx, y1 + 8, text=m.fit(title, m.card_t, self.max_w), anchor="nw",
+                       font=m.card_t, fill=INK_SOFT)
+        self.value = cv.create_text(tx, y1 + 8 + m.line(m.card_t) + 2, text="…",
+                                    anchor="nw", font=m.card_v, fill=INK)
+        self.sub = cv.create_text(x1 + 12, y2 - 6, text="", anchor="sw",
+                                  font=m.card_s, fill=INK_SOFT)
+        self.sub_max_w = x2 - x1 - 24
 
     def set(self, value: str, sub: str = "", color: str = SUN) -> None:
-        self.cv.itemconfig(self.value, text=value)
-        self.cv.itemconfig(self.sub, text=sub)
+        m = self.m
+        self.cv.itemconfig(self.value, text=m.fit(value, m.card_v, self.max_w))
+        self.cv.itemconfig(self.sub, text=m.fit(sub, m.card_s, self.sub_max_w))
         self.cv.itemconfig(self.badge, fill=color)
 
 
 class App:
-    def __init__(self, root: tk.Tk, smoke: bool = False) -> None:
+    def __init__(self, root: tk.Tk, smoke: bool = False, defer_status: bool = False) -> None:
         self.root = root
         self.smoke = smoke
         self.q: "queue.Queue[tuple]" = queue.Queue()
@@ -249,37 +321,47 @@ class App:
         self.celebrate_until = 0.0
         self.mascot_dy = 0.0
         self.confetti: list[tuple[int, float, float]] = []
+        self.reserved: list[tuple[float, float, float, float, str]] = []
 
         root.title(APP_TITLE)
         root.resizable(False, False)
         root.configure(bg=CREAM)
-        # centra la finestra e portala in primo piano all'avvio
+
+        self.m = Metrics(root)
+        self.cv = tk.Canvas(root, width=W, height=600, bg=CREAM, highlightthickness=0)
+        self.cv.pack(fill="both", expand=True)
+
+        self._build_layout()
+        self._spawn_bubbles()
+        self._build_mascot()
+
+        # dimensione finale: l'altezza deriva dal flusso misurato
         root.update_idletasks()
+        self.cv.configure(height=self.total_h)
         sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
-        root.geometry(f"{W}x{H}+{(sw - W) // 2}+{max(0, (sh - H) // 2 - 20)}")
+        pos_x, pos_y = (sw - W) // 2, max(0, (sh - self.total_h) // 2 - 20)
+        root.geometry(f"{W}x{self.total_h}+{pos_x}+{pos_y}")
         root.attributes("-topmost", True)
-        root.after(6000, lambda: root.attributes("-topmost", False))
+        root.after(4000, lambda: root.attributes("-topmost", False))
         try:
             root.iconbitmap(str(TOOLS_DIR.parent / "assets" / "aniimo-italian-installer-icon.ico"))
         except tk.TclError:
             pass
 
-        self.cv = tk.Canvas(root, width=W, height=H, bg=CREAM, highlightthickness=0)
-        self.cv.pack(fill="both", expand=True)
-
-        self._build_layout()
-        self._spawn_bubbles()
-        self._build_mascot(96, 84)
-
         # log in stile console, incorporato nel canvas
-        self.log = tk.Text(self.root, bg=LOG_BG, fg="#EDE6F7", relief="flat", height=8,
+        log_pad = 10
+        self.log = tk.Text(self.root, bg=LOG_BG, fg="#EDE6F7", relief="flat",
                            font=("Consolas", 9), wrap="word", state="disabled",
-                           padx=10, pady=6, highlightthickness=0)
-        rounded_rect(self.cv, 24, H - 212, W - 24, H - 32, 18, fill=LOG_BG, outline="#241D33", width=2)
-        self.log_title = self.cv.create_text(42, H - 202, text="Registro attività",
-                                             anchor="nw", font=("Segoe UI", 9, "bold"), fill="#B9AFD6")
-        self.cv.create_window(W // 2, H - 118, window=self.log, width=W - 68, height=132)
-        # il registro non nasce mai vuoto: benvenuto + suggerimenti
+                           padx=log_pad, pady=4, highlightthickness=0)
+        log_h = self.log_bottom - self.log_top - self.m.line(self.m.logt) - 8
+        dense_round_rect(self.cv, self.margin, self.log_top, W - self.margin, self.log_bottom,
+                         14, fill=LOG_BG, outline="#241D33", width=2)
+        self.log_title = self.cv.create_text(
+            self.margin + 18, self.log_top + 8, text="Registro attività",
+            anchor="nw", font=self.m.logt, fill="#B9AFD6")
+        self.cv.create_window(W // 2, self.log_top + 8 + self.m.line(self.m.logt)
+                              + (log_h - self.m.line(self.m.logt) - 8) / 2,
+                              window=self.log, width=W - 2 * self.margin - 20, height=log_h)
         self.log.configure(state="normal")
         for line in (
             "Benvenuto nel Centro di controllo ✦",
@@ -289,9 +371,24 @@ class App:
             self.log.insert("end", line + "\n")
         self.log.configure(state="disabled")
 
-        root.after(80, self._poll)
-        root.after(50, self._tick)
-        self.refresh_status()
+        self.footer = self.cv.create_text(
+            W // 2, self.total_h - 6, text="", anchor="s", font=self.m.foot, fill=INK_SOFT)
+
+        self._tick_job = root.after(50, self._tick)
+        self._poll_job = root.after(80, self._poll)
+        root.protocol("WM_DELETE_WINDOW", self._on_close)
+        if not defer_status:
+            self.refresh_status()
+
+    def _on_close(self) -> None:
+        for attr in ("_tick_job", "_poll_job"):
+            job = getattr(self, attr, None)
+            if job:
+                try:
+                    self.root.after_cancel(job)
+                except Exception:
+                    pass
+        self.root.destroy()
         if self.music_on and not smoke:
             # la prima sintesi del tema può richiedere qualche secondo: fuori dal thread UI
             threading.Thread(target=self._start_music, daemon=True).start()
@@ -307,74 +404,165 @@ class App:
 
     # ------------------------------------------------------------------ UI
     def _build_layout(self) -> None:
-        cv = self.cv
-        rounded_rect(cv, 18, 14, W - 18, 148, 22, fill=CARD, outline="#EFE6DC", width=2)
-        cv.create_text(178, 34, text="Traduzione Italiana", anchor="nw",
-                       font=("Segoe UI", 21, "bold"), fill=INK)
-        cv.create_text(178, 72, text="Centro di controllo · fork notorious-pizza · traduzione originale di Sici29",
-                       anchor="nw", font=("Segoe UI", 10), fill=INK_SOFT)
-        cv.create_text(178, 98, text="Nel gioco seleziona: Inglese",
-                       anchor="nw", font=("Segoe UI", 10, "italic"), fill=CORAL_DARK)
+        cv, m = self.cv, self.m
+        mg = self.margin = 18
+        gap = 14  # gap verticale generoso: gli elementi non si toccano mai
+        pad = 10
+        y = 14.0
 
-        self.music_btn = RoundButton(cv, W - 76, 48, 84, 34, "Musica ♪", MINT, MINT_DARK,
-                                     self.toggle_music, font=("Segoe UI", 10, "bold"))
-        self.gh_btn = RoundButton(cv, W - 76, 92, 84, 34, "GitHub", LAV, LAV_DARK,
-                                  self.open_github, font=("Segoe UI", 10, "bold"))
+        # --- header --------------------------------------------------------
+        head_inner = m.line(m.huge) + 4 + m.line(m.sub) + 3 + m.line(m.ital)
+        mascot_h = 108.0
+        header_h = max(head_inner + 2 * pad + 6, mascot_h)
+        dense_round_rect(cv, mg, y, W - mg, y + header_h, 16,
+                         fill=CARD, outline="#EFE6DC", width=2)
+        text_x = 176
+        btn_zone = 108  # spazio riservato ai due pulsanti in alto a destra
+        avail = W - mg - btn_zone - text_x - 12
+        cv.create_text(text_x, y + pad, text="Traduzione Italiana", anchor="nw", font=m.huge, fill=INK)
+        cv.create_text(text_x, y + pad + m.line(m.huge) + 4,
+                       text=m.fit("Centro di controllo · fork notorious-pizza · traduzione originale di Sici29",
+                                  m.sub, avail),
+                       anchor="nw", font=m.sub, fill=INK_SOFT)
+        cv.create_text(text_x, y + pad + m.line(m.huge) + 4 + m.line(m.sub) + 3,
+                       text="Nel gioco seleziona: Inglese",
+                       anchor="nw", font=m.ital, fill=CORAL_DARK)
+        # pulsanti Musica / GitHub in alto a destra, dentro l'header
+        bw = 100
+        bhh = m.line(m.btn_s) + 16
+        bx = W - mg - 14 - bw / 2
+        by1 = y + 12 + bhh / 2
+        by2 = by1 + bhh + 8
+        self.music_btn = RoundButton(cv, bx, by1, bw, bhh, "Musica ♪", MINT, MINT_DARK,
+                                     self.toggle_music, m, big=False)
+        self.gh_btn = RoundButton(cv, bx, by2, bw, bhh, "GitHub", LAV, LAV_DARK,
+                                  self.open_github, m, big=False)
+        self._reserve(mg, y, W - mg, y + header_h, "header")
+        self.header_y, self.header_h = y, header_h
+        y += header_h + gap
 
-        # banner di sintesi: il verdetto complessivo in un colpo d'occhio
-        self.hero = rounded_rect(cv, 24, 160, W - 24, 208, 18,
-                                 fill="#FFF1D6", outline="#E8D5A8", width=2)
-        self.hero_text = cv.create_text(W // 2, 184, text="Carico lo stato…",
-                                        font=("Segoe UI", 12, "bold"), fill="#8A6A2F")
+        # --- banner di sintesi ---------------------------------------------
+        self.hero_lines = 2
+        hero_h = self.hero_lines * m.line(m.hero) + 2 * pad
+        self.hero = dense_round_rect(cv, mg, y, W - mg, y + hero_h, 14,
+                                     fill=HERO_WARN[0], outline=HERO_WARN[1], width=2)
+        self.hero_text = cv.create_text(W // 2, y + hero_h / 2, text="Carico lo stato…",
+                                        width=W - 2 * mg - 32, justify="center",
+                                        font=m.hero, fill=HERO_WARN[2])
+        self._reserve(mg, y, W - mg, y + hero_h, "hero")
+        y += hero_h + gap
 
-        x1, y1, x2 = 24, 224, W - 24
-        gap, ch = 14, 80
-        cw = (x2 - x1 - gap) / 2
-        self.card_game = Card(cv, x1, y1, x1 + cw, y1 + ch, "◆", "Gioco rilevato")
-        self.card_tr = Card(cv, x1 + cw + gap, y1, x2, y1 + ch, "✦", "Traduzione")
-        self.card_align = Card(cv, x1, y1 + ch + gap, x1 + cw, y1 + 2 * ch + gap, "⬡", "Allineamento patch")
-        self.card_news = Card(cv, x1 + cw + gap, y1 + ch + gap, x2, y1 + 2 * ch + gap, "✧", "Novità traduzione")
+        # --- card di stato ---------------------------------------------------
+        ch = m.line(m.card_t) + 2 + m.line(m.card_v) + 4 + m.line(m.card_s) + 2 * pad + 4
+        cw = (W - 2 * mg - gap) / 2
+        self.card_game = Card(cv, mg, y, mg + cw, y + ch, "◆", "Gioco rilevato", m)
+        self.card_tr = Card(cv, mg + cw + gap, y, W - mg, y + ch, "✦", "Traduzione", m)
+        self.card_align = Card(cv, mg, y + ch + gap, mg + cw, y + 2 * ch + gap, "⬡",
+                               "Allineamento patch", m)
+        self.card_news = Card(cv, mg + cw + gap, y + ch + gap, W - mg, y + 2 * ch + gap, "✧",
+                              "Novità traduzione", m)
+        self._reserve(mg, y, W - mg, y + 2 * ch + gap, "card")
+        y += 2 * ch + gap + gap
 
-        by = 448
-        self.btn_refresh = RoundButton(cv, 122, by, 180, 46, "↻  Aggiorna stato", MINT, MINT_DARK, self.refresh_status)
-        self.btn_apply = RoundButton(cv, 352, by, 226, 54, "✦  Applica traduzione", CORAL, CORAL_DARK,
-                                     self.apply_translation)
-        self.btn_restore = RoundButton(cv, 576, by, 196, 46, "♻  Ripristina backup", LAV, LAV_DARK,
-                                       self.restore_backup)
-        self.btn_folder = RoundButton(cv, 152, by + 44, 240, 34, "▸  Apri cartella gioco", SUN, SUN_DARK,
-                                      self.open_game_folder, font=("Segoe UI", 9, "bold"))
-        self.btn_pick = RoundButton(cv, 304, by + 44, 200, 34, "◎  Scegli cartella…", SUN, SUN_DARK,
-                                    self.choose_folder, font=("Segoe UI", 9, "bold"))
-        self.btn_releases = RoundButton(cv, 470, by + 44, 210, 34, "↓  Release su GitHub", SUN, SUN_DARK,
-                                        self.open_releases, font=("Segoe UI", 9, "bold"))
+        # --- pulsanti --------------------------------------------------------
+        bh = m.line(m.btn) + 22
+        big = [
+            ("↻  Aggiorna stato", MINT, MINT_DARK, None),
+            ("✦  Applica traduzione", CORAL, CORAL_DARK, None),
+            ("♻  Ripristina backup", LAV, LAV_DARK, None),
+        ]
+        widths = [max(150.0, m.btn.measure(lbl) + 36) for lbl, *_ in big]
+        budget = W - 2 * mg
+        total = sum(widths) + 18 * 2
+        if total > budget:
+            k = budget / total
+            widths = [w * k for w in widths]
+        x = mg + (budget - total) / 2
+        made = []
+        for (lbl, color, dark, _), w in zip(big, widths):
+            x += w / 2
+            made.append(RoundButton(cv, x, y + bh / 2, w, bh, lbl, color, dark, None, m))
+            self._reserve(x - w / 2, y, x + w / 2, y + bh, f"btn:{lbl}")
+            x += w / 2 + 18
+        self.btn_refresh, self.btn_apply, self.btn_restore = made
+        self.btn_refresh.cmd = self.refresh_status
+        self.btn_apply.cmd = self.apply_translation
+        self.btn_restore.cmd = self.restore_backup
+        y += bh + gap + gap
 
-        self.footer = cv.create_text(W // 2, H - 16, text="", font=("Segoe UI", 8), fill=INK_SOFT)
+        bhs = m.line(m.btn_s) + 18
+        small = [
+            ("▸  Apri cartella gioco", SUN, SUN_DARK, None),
+            ("◎  Scegli cartella…", SUN, SUN_DARK, None),
+            ("↓  Release su GitHub", SUN, SUN_DARK, None),
+        ]
+        widths = [max(120.0, m.btn_s.measure(lbl) + 30) for lbl, *_ in small]
+        total = sum(widths) + 16 * 2
+        if total > budget:
+            k = budget / total
+            widths = [w * k for w in widths]
+        x = mg + (budget - total) / 2
+        made = []
+        for (lbl, color, dark, _), w in zip(small, widths):
+            x += w / 2
+            made.append(RoundButton(cv, x, y + bhs / 2, w, bhs, lbl, color, dark, None, m, big=False))
+            self._reserve(x - w / 2, y, x + w / 2, y + bhs, f"btn:{lbl}")
+            x += w / 2 + 16
+        self.btn_folder, self.btn_pick, self.btn_releases = made
+        self.btn_folder.cmd = self.open_game_folder
+        self.btn_pick.cmd = self.choose_folder
+        self.btn_releases.cmd = self.open_releases
+        y += bhs + gap
+
+        # --- log + footer (chiusura del flusso) ------------------------------
+        log_lines = 6
+        self.log_top = y
+        self.log_bottom = y + m.line(m.logt) + 10 + log_lines * m.line(m.log) + 12
+        self._reserve(mg, self.log_top, W - mg, self.log_bottom, "log")
+        self.total_h = int(self.log_bottom + m.line(m.foot) + 14)
+
+    def _reserve(self, x1, y1, x2, y2, name: str) -> None:
+        self.reserved.append((x1, y1, x2, y2, name))
+
+    def check_overlaps(self) -> list[str]:
+        """Verifica a coppie che le aree riservate non si intersechino (padding 2px)."""
+        bad = []
+        for i in range(len(self.reserved)):
+            for j in range(i + 1, len(self.reserved)):
+                a, b = self.reserved[i], self.reserved[j]
+                if a[0] < b[2] - 2 and b[0] < a[2] - 2 and a[1] < b[3] - 2 and b[1] < a[3] - 2:
+                    bad.append(f"{a[4]} ∩ {b[4]}")
+        return bad
 
     def _spawn_bubbles(self) -> None:
         self.bubbles = []
+        top = self.header_y + self.header_h + 4
         for _ in range(14):
             r = random.uniform(6, 16)
             x = random.uniform(10, W - 10)
-            y = random.uniform(160, H - 60)
+            y = random.uniform(top, self.log_top - 20)
             item = self.cv.create_oval(x - r, y - r, x + r, y + r,
                                        fill=random.choice(BUBBLE_COLORS), outline="")
             self.cv.tag_lower(item)
             self.bubbles.append((item, random.uniform(0.15, 0.5), random.uniform(-0.3, 0.3)))
 
-    def _build_mascot(self, mx: float, my: float) -> None:
+    def _build_mascot(self) -> None:
         """Piccola creatura tonda in stile Aniimo: orecchie, fogliolina, blush."""
         cv = self.cv
+        mx = 94.0
+        my = self.header_y + self.header_h / 2 + 4
         self.mx, self.my = mx, my
         items: list[int] = []
-        for sx in (-1, 1):  # orecchie (sotto il corpo nel z-order)
-            items.append(cv.create_polygon(mx + sx * 26, my - 18, mx + sx * 42, my - 56, mx + sx * 8, my - 28,
+        for sx in (-1, 1):  # orecchie
+            items.append(cv.create_polygon(mx + sx * 26, my - 18, mx + sx * 42, my - 56,
+                                           mx + sx * 8, my - 28,
                                            smooth=True, fill="#FFE0E9", outline="#F3B7C8", width=3))
-        items.append(cv.create_line(mx, my - 28, mx, my - 42, width=3, fill="#7FBF8E"))  # gambo foglia
+        items.append(cv.create_line(mx, my - 28, mx, my - 42, width=3, fill="#7FBF8E"))
         items.append(cv.create_oval(mx - 12, my - 56, mx + 10, my - 40,
                                     fill="#9FE0AE", outline="#7FBF8E", width=2))
         items.append(cv.create_oval(mx - 42, my - 32, mx + 42, my + 46,
-                                    fill="#FFE0E9", outline="#F3B7C8", width=3))  # corpo
-        items.append(cv.create_oval(mx - 24, my + 4, mx + 24, my + 44, fill="#FFF7FA", outline=""))  # pancia
+                                    fill="#FFE0E9", outline="#F3B7C8", width=3))
+        items.append(cv.create_oval(mx - 24, my + 4, mx + 24, my + 44, fill="#FFF7FA", outline=""))
         self.m_eyes = [
             cv.create_oval(mx - 21, my - 9, mx - 11, my + 1, fill=INK, outline=""),
             cv.create_oval(mx + 11, my - 9, mx + 21, my + 1, fill=INK, outline=""),
@@ -384,16 +572,15 @@ class App:
             cv.create_oval(mx + 13, my - 8, mx + 17, my - 4, fill="white", outline=""),
         ]
         self.m_eyes_happy = [
-            cv.create_arc(mx - 22, my - 7, mx - 10, my + 5, start=20, extent=140, style="arc",
-                          width=2, state="hidden"),
-            cv.create_arc(mx + 10, my - 7, mx + 22, my + 5, start=20, extent=140, style="arc",
-                          width=2, state="hidden"),
+            cv.create_arc(mx - 22, my - 7, mx - 10, my + 5, start=20, extent=140,
+                          style="arc", width=2, state="hidden"),
+            cv.create_arc(mx + 10, my - 7, mx + 22, my + 5, start=20, extent=140,
+                          style="arc", width=2, state="hidden"),
         ]
-        items.append(cv.create_oval(mx - 31, my + 7, mx - 19, my + 15, fill="#FFB9CC", outline=""))  # blush
+        items.append(cv.create_oval(mx - 31, my + 7, mx - 19, my + 15, fill="#FFB9CC", outline=""))
         items.append(cv.create_oval(mx + 19, my + 7, mx + 31, my + 15, fill="#FFB9CC", outline=""))
         items.append(cv.create_arc(mx - 7, my + 9, mx + 7, my + 19, start=20, extent=140,
-                                   style="arc", width=2))  # sorriso ^ ^
-        # cuoricino e stellina che accompagnano la mascotte
+                                   style="arc", width=2))
         self.m_heart = cv.create_text(mx + 52, my - 42, text="♥", fill=CORAL,
                                       font=("Segoe UI Symbol", 11, "bold"))
         items.append(cv.create_text(mx - 56, my - 26, text="✧", fill="#F3B7C8",
@@ -407,14 +594,13 @@ class App:
         if not self.root.winfo_exists():
             return
         now = time.time()
-        # bolle che salgono lente, riappaiono in basso
         for item, vy, wob in self.bubbles:
             self.cv.move(item, wob * 0.6, -vy)
             x1b, y1b, _, y2b = self.cv.bbox(item)
-            if y2b < 152 or x1b < -20 or x1b > W + 20:
-                self.cv.move(item, -wob * 0.6 + random.uniform(-8, 8), H - 40 - y1b)
+            if y2b < self.header_y + self.header_h or x1b < -20 or x1b > W + 20:
+                self.cv.move(item, -wob * 0.6 + random.uniform(-8, 8),
+                             self.log_top - 20 - y1b)
 
-        # mascotte: respiro + saltelli di gioia + cuoricino che pulsa
         happy = now < self.celebrate_until
         bob = math.sin((now - self.t0) * 2.2) * 4
         if happy:
@@ -427,11 +613,10 @@ class App:
         pulse = 11 + int(2.5 * (1.0 + math.sin((now - self.t0) * 3.2)))
         self.cv.itemconfig(self.m_heart, font=("Segoe UI Symbol", pulse, "bold"))
 
-        # blink periodale; occhi a falce quando festeggia
         if happy:
             show, happy_show = "hidden", "normal"
         elif now >= self.blink_at:
-            show, happy_show = "hidden", "hidden"  # occhi chiusi = entrambi nascosti per un istante
+            show, happy_show = "hidden", "hidden"
             if not self.blink_closing:
                 self.blink_closing = True
         else:
@@ -447,19 +632,18 @@ class App:
         for e in self.m_shine:
             self.cv.itemconfig(e, state=show)
 
-        # confetti in caduta
         if self.confetti:
             alive = []
             for item, vx, vy in self.confetti:
                 vy += 0.35
                 self.cv.move(item, vx, vy)
                 _, y1c, _, _ = self.cv.bbox(item)
-                if y1c < H + 20:
+                if y1c < self.total_h + 20:
                     alive.append((item, vx, vy))
                 else:
                     self.cv.delete(item)
             self.confetti = alive
-        self.root.after(50, self._tick)
+        self._tick_job = self.root.after(50, self._tick)
 
     def _poll(self) -> None:
         if not self.root.winfo_exists():
@@ -478,7 +662,7 @@ class App:
                     self._render_status(payload)
         except queue.Empty:
             pass
-        self.root.after(80, self._poll)
+        self._poll_job = self.root.after(80, self._poll)
 
     # ------------------------------------------------------------ thread worker
     def _run_worker(self, fn, label: str, *, celebrate_on_success: bool = False,
@@ -496,8 +680,6 @@ class App:
             code: int | None = None
             err: str | None = None
             try:
-                # il redirect cattura le print dell'installer; ristretto alla sola
-                # chiamata per non toccare lo stdout globale più del necessario
                 sys.stdout = QueueWriter(self.q)
                 code = fn()
             except Exception as exc:  # noqa: BLE001
@@ -545,7 +727,14 @@ class App:
 
         self._run_worker(job, "Rilevamento stato", refresh_after=False)
 
-    def _set_hero(self, text: str, bg: str, outline: str, fg: str) -> None:
+    @staticmethod
+    def short_path(text: str, keep: int = 46) -> str:
+        if len(text) <= keep:
+            return text
+        return text[:16] + "…" + text[-(keep - 17):]
+
+    def _set_hero(self, text: str, theme: tuple[str, str, str]) -> None:
+        bg, outline, fg = theme
         self.cv.itemconfig(self.hero, fill=bg, outline=outline)
         self.cv.itemconfig(self.hero_text, text=text, fill=fg)
 
@@ -553,24 +742,26 @@ class App:
         self.status = status
         manifest = status.get("manifest", {})
         game_dir = status.get("game_dir")
+        m = self.m
 
-        running = bool(game_dir) and bool(inst.process_running())
+        running_names = inst.process_running() if game_dir else []
+        running = bool(running_names)
         if not game_dir:
             self.card_game.set("Gioco non trovato", "usa «Scegli cartella…»", CORAL)
+        elif running:
+            upd = status.get("detected_game_update") or "?"
+            self.card_game.set(f"Build {upd}", f"⚠ in esecuzione: {', '.join(running_names)}", SUN)
         else:
             upd = status.get("detected_game_update") or "?"
-            if running:
-                self.card_game.set(f"Build {upd}", f"⚠ in esecuzione: {', '.join(inst.process_running())}", SUN)
-            else:
-                self.card_game.set(f"Build {upd}", short_path(str(game_dir)), MINT)
+            self.card_game.set(f"Build {upd}", App.short_path(str(game_dir)), MINT)
 
         tr = status.get("translation_installed")
         if tr is True:
             ver = status.get("installed_translation_version") or "?"
             ratio = status.get("translation_match_ratio")
-            pct = f" · {ratio * 100:.0f}% corrisponde" if isinstance(ratio, (int, float)) else ""
+            pct = f" · {ratio * 100:.0f}%" if isinstance(ratio, (int, float)) else ""
             self.card_tr.set(f"✓ Installata (v{ver})",
-                             f"slot {status.get('translation_slot') or 'en'}{pct}", MINT)
+                             f"slot {status.get('translation_slot') or 'en'}{pct} corrisponde", MINT)
         elif tr is False:
             self.card_tr.set("Non installata", "pronta all'uso ✦", CORAL)
         else:
@@ -603,31 +794,26 @@ class App:
 
         # banner di sintesi
         if not game_dir:
-            self._set_hero("Gioco non trovato — usa «Scegli cartella…»",
-                           "#FFE3EC", "#F3B7C8", "#B4435C")
+            self._set_hero("Gioco non trovato — usa «Scegli cartella…»", HERO_BAD)
         elif running:
-            self._set_hero("⚠ Aniimo è in esecuzione — chiudilo prima di applicare o ripristinare",
-                           "#FFF1D6", "#E8D5A8", "#8A6A2F")
+            self._set_hero("⚠ Aniimo è in esecuzione — chiudilo prima di applicare o ripristinare", HERO_WARN)
         elif unknown:
-            self._set_hero(f"⚠ {unknown} stringhe nuove restano in inglese: serve un aggiornamento della traduzione",
-                           "#FFE3EC", "#F3B7C8", "#B4435C")
+            self._set_hero(f"⚠ {unknown} stringhe nuove restano in inglese: "
+                           f"serve un aggiornamento della traduzione", HERO_BAD)
         elif tr is False:
-            self._set_hero("Traduzione pronta — premi «✦ Applica traduzione»",
-                           "#FFF1D6", "#E8D5A8", "#8A6A2F")
+            self._set_hero("Traduzione pronta — premi «✦ Applica traduzione»", HERO_WARN)
         elif tr is True and (aligned or status.get("text_resources_supported") is True):
             if upd_info.get("update_available"):
-                self._set_hero(f"✓ Tutto pronto · novità v{upd_info.get('latest')} disponibile su GitHub",
-                               "#FFF1D6", "#E8D5A8", "#8A6A2F")
+                self._set_hero(f"✓ Tutto pronto · novità v{upd_info.get('latest')} su GitHub", HERO_WARN)
             else:
-                self._set_hero(f"✓ Tutto pronto — traduzione installata e allineata alla build {upd}",
-                               "#DFF6EC", "#BFE3D4", "#2E6B57")
+                self._set_hero(f"✓ Tutto pronto — traduzione installata e allineata alla build {upd}", HERO_OK)
         else:
-            self._set_hero("Stato traduzione incerto — consulta il registro sotto",
-                           "#FFF1D6", "#E8D5A8", "#8A6A2F")
+            self._set_hero("Stato traduzione incerto — consulta il registro sotto", HERO_WARN)
 
-        self.cv.itemconfig(self.footer, text=(
+        self.cv.itemconfig(self.footer, text=m.fit(
             f"installer v{manifest.get('translation_version', '?')} · build supportate: "
-            f"{', '.join(supported) or '—'} · backup: Documenti\\AniimoItalianTranslation"))
+            f"{', '.join(supported) or '—'} · backup: Documenti\\AniimoItalianTranslation",
+            m.foot, W - 2 * self.margin))
 
     # ------------------------------------------------------------ azioni
     def apply_translation(self) -> None:
@@ -700,16 +886,16 @@ class App:
         self.celebrate_until = time.time() + 2.2
         for _ in range(46):
             x = random.uniform(30, W - 30)
-            item = self.cv.create_rectangle(x, 150, x + random.uniform(4, 9), 164,
+            item = self.cv.create_rectangle(x, self.header_y + self.header_h,
+                                            x + random.uniform(4, 9), self.header_y + self.header_h + 14,
                                             fill=random.choice([CORAL, MINT, LAV, SUN, SKY]), outline="")
             self.cv.tag_raise(item)
             self.confetti.append((item, random.uniform(-2.4, 2.4), random.uniform(-3.0, 0.0)))
 
 
 def self_screenshot(root: tk.Tk, out_path: str) -> bool:
-    """Cattura la propria finestra con PrintWindow (Modalità sviluppo, richiede Pillow)."""
+    """Cattura la propria finestra con PrintWindow (modalità sviluppo, richiede Pillow)."""
     try:
-        import ctypes
         import ctypes.wintypes as wt
         from PIL import Image
     except ImportError:
@@ -719,7 +905,6 @@ def self_screenshot(root: tk.Tk, out_path: str) -> bool:
     root.update_idletasks()
     root.update()
     hwnd = root.winfo_id()
-    # winfo_id restituisce la finestra interna: risali alla top-level
     while user32.GetParent(hwnd):
         hwnd = user32.GetParent(hwnd)
     rect = wt.RECT()
@@ -731,7 +916,7 @@ def self_screenshot(root: tk.Tk, out_path: str) -> bool:
     gdi32.SelectObject(mem, bmp)
     for _ in range(3):
         root.update()
-        user32.PrintWindow(hwnd, mem, 2)  # PW_RENDERFULLCONTENT
+        user32.PrintWindow(hwnd, mem, 2)
     user32.InvalidateRect(hwnd, None, True)
     root.update()
     user32.PrintWindow(hwnd, mem, 2)
@@ -758,13 +943,24 @@ def self_screenshot(root: tk.Tk, out_path: str) -> bool:
 
 
 def main() -> int:
+    enable_dpi_awareness()
     smoke = "--smoke" in sys.argv
     foto = sys.argv[sys.argv.index("--foto") + 1] if "--foto" in sys.argv else None
+    check_only = "--check" in sys.argv
     root = tk.Tk()
-    app = App(root, smoke=smoke or bool(foto))
+    app = App(root, smoke=smoke or bool(foto) or check_only, defer_status=check_only)
+
+    if check_only:
+        problems = app.check_overlaps()
+        for p in problems:
+            print("OVERLAP:", p)
+        print("OVERLAPS:", len(problems), "| altezza calcolata:", app.total_h)
+        root.destroy()
+        return 1 if problems else 0
+
     if foto:
         def scatta() -> None:
-            time.sleep(4.0)  # lascia popolare le card di stato
+            time.sleep(4.0)
             for _ in range(30):
                 root.update()
                 time.sleep(0.1)
