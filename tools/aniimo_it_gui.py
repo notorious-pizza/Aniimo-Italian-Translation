@@ -38,7 +38,7 @@ except ImportError:  # sviluppo fuori Windows
     HAVE_WINSOUND = False
 
 APP_TITLE = "Aniimo · Traduzione Italiana — Centro di controllo"
-W, H = 800, 700
+W, H = 800, 760
 GUI_SETTINGS = inst.USER_WORK_DIR / "gui_settings.json"
 THEME_WAV = inst.USER_WORK_DIR / "theme.wav"
 
@@ -166,6 +166,13 @@ def rounded_rect(cv: tk.Canvas, x1, y1, x2, y2, r, **kw) -> int:
     return cv.create_polygon(pts, smooth=True, **kw)
 
 
+def short_path(text: str, keep: int = 46) -> str:
+    """Abbrevia i percorsi lunghi con ellissi centrale (inizio + coda significativa)."""
+    if len(text) <= keep:
+        return text
+    return text[:16] + "…" + text[-(keep - 17):]
+
+
 class RoundButton:
     """Pulsante disegnato su canvas, con hover e stato disabilitato."""
 
@@ -199,6 +206,14 @@ class RoundButton:
         self.cv.itemconfig(self.body, fill=self.color if on else "#DDD6E4",
                            outline=self.dark if on else "#B9B1C6")
         self.cv.itemconfig(self.txt, fill="white" if on else "#F4F1F8")
+
+    def set_label(self, label: str) -> None:
+        self.cv.itemconfig(self.txt, text=label)
+
+    def set_style(self, color: str, dark: str) -> None:
+        self.color, self.dark = color, dark
+        if self.enabled:
+            self.cv.itemconfig(self.body, fill=color, outline=dark)
 
 
 class Card:
@@ -243,7 +258,7 @@ class App:
         sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
         root.geometry(f"{W}x{H}+{(sw - W) // 2}+{max(0, (sh - H) // 2 - 20)}")
         root.attributes("-topmost", True)
-        root.after(2500, lambda: root.attributes("-topmost", False))
+        root.after(6000, lambda: root.attributes("-topmost", False))
         try:
             root.iconbitmap(str(TOOLS_DIR.parent / "assets" / "aniimo-italian-installer-icon.ico"))
         except tk.TclError:
@@ -264,6 +279,15 @@ class App:
         self.log_title = self.cv.create_text(42, H - 202, text="Registro attività",
                                              anchor="nw", font=("Segoe UI", 9, "bold"), fill="#B9AFD6")
         self.cv.create_window(W // 2, H - 118, window=self.log, width=W - 68, height=132)
+        # il registro non nasce mai vuoto: benvenuto + suggerimenti
+        self.log.configure(state="normal")
+        for line in (
+            "Benvenuto nel Centro di controllo ✦",
+            "Nel gioco seleziona la lingua: Inglese.",
+            "Applica la traduzione, ripristina il backup o aggiorna lo stato da qui.",
+        ):
+            self.log.insert("end", line + "\n")
+        self.log.configure(state="disabled")
 
         root.after(80, self._poll)
         root.after(50, self._tick)
@@ -297,7 +321,13 @@ class App:
         self.gh_btn = RoundButton(cv, W - 76, 92, 84, 34, "GitHub", LAV, LAV_DARK,
                                   self.open_github, font=("Segoe UI", 10, "bold"))
 
-        x1, y1, x2 = 24, 168, W - 24
+        # banner di sintesi: il verdetto complessivo in un colpo d'occhio
+        self.hero = rounded_rect(cv, 24, 160, W - 24, 208, 18,
+                                 fill="#FFF1D6", outline="#E8D5A8", width=2)
+        self.hero_text = cv.create_text(W // 2, 184, text="Carico lo stato…",
+                                        font=("Segoe UI", 12, "bold"), fill="#8A6A2F")
+
+        x1, y1, x2 = 24, 224, W - 24
         gap, ch = 14, 80
         cw = (x2 - x1 - gap) / 2
         self.card_game = Card(cv, x1, y1, x1 + cw, y1 + ch, "◆", "Gioco rilevato")
@@ -305,7 +335,7 @@ class App:
         self.card_align = Card(cv, x1, y1 + ch + gap, x1 + cw, y1 + 2 * ch + gap, "⬡", "Allineamento patch")
         self.card_news = Card(cv, x1 + cw + gap, y1 + ch + gap, x2, y1 + 2 * ch + gap, "✧", "Novità traduzione")
 
-        by = 396
+        by = 448
         self.btn_refresh = RoundButton(cv, 122, by, 180, 46, "↻  Aggiorna stato", MINT, MINT_DARK, self.refresh_status)
         self.btn_apply = RoundButton(cv, 352, by, 226, 54, "✦  Applica traduzione", CORAL, CORAL_DARK,
                                      self.apply_translation)
@@ -349,6 +379,10 @@ class App:
             cv.create_oval(mx - 21, my - 9, mx - 11, my + 1, fill=INK, outline=""),
             cv.create_oval(mx + 11, my - 9, mx + 21, my + 1, fill=INK, outline=""),
         ]
+        self.m_shine = [
+            cv.create_oval(mx - 19, my - 8, mx - 15, my - 4, fill="white", outline=""),
+            cv.create_oval(mx + 13, my - 8, mx + 17, my - 4, fill="white", outline=""),
+        ]
         self.m_eyes_happy = [
             cv.create_arc(mx - 22, my - 7, mx - 10, my + 5, start=20, extent=140, style="arc",
                           width=2, state="hidden"),
@@ -359,12 +393,19 @@ class App:
         items.append(cv.create_oval(mx + 19, my + 7, mx + 31, my + 15, fill="#FFB9CC", outline=""))
         items.append(cv.create_arc(mx - 7, my + 9, mx + 7, my + 19, start=20, extent=140,
                                    style="arc", width=2))  # sorriso ^ ^
-        self.m_group = items + self.m_eyes + self.m_eyes_happy
+        # cuoricino e stellina che accompagnano la mascotte
+        self.m_heart = cv.create_text(mx + 52, my - 42, text="♥", fill=CORAL,
+                                      font=("Segoe UI Symbol", 11, "bold"))
+        items.append(cv.create_text(mx - 56, my - 26, text="✧", fill="#F3B7C8",
+                                    font=("Segoe UI Symbol", 10)))
+        self.m_group = items + self.m_eyes + self.m_shine + self.m_eyes_happy
         for item in items:
             self.cv.tag_raise(item)
 
     # ------------------------------------------------------------ animazione
     def _tick(self) -> None:
+        if not self.root.winfo_exists():
+            return
         now = time.time()
         # bolle che salgono lente, riappaiono in basso
         for item, vy, wob in self.bubbles:
@@ -373,7 +414,7 @@ class App:
             if y2b < 152 or x1b < -20 or x1b > W + 20:
                 self.cv.move(item, -wob * 0.6 + random.uniform(-8, 8), H - 40 - y1b)
 
-        # mascotte: respiro + saltelli di gioia
+        # mascotte: respiro + saltelli di gioia + cuoricino che pulsa
         happy = now < self.celebrate_until
         bob = math.sin((now - self.t0) * 2.2) * 4
         if happy:
@@ -383,6 +424,8 @@ class App:
             self.mascot_dy = bob
             for item in self.m_group:
                 self.cv.move(item, 0, dy)
+        pulse = 11 + int(2.5 * (1.0 + math.sin((now - self.t0) * 3.2)))
+        self.cv.itemconfig(self.m_heart, font=("Segoe UI Symbol", pulse, "bold"))
 
         # blink periodale; occhi a falce quando festeggia
         if happy:
@@ -401,6 +444,8 @@ class App:
             self.cv.itemconfig(e, state=show)
         for e in self.m_eyes_happy:
             self.cv.itemconfig(e, state=happy_show)
+        for e in self.m_shine:
+            self.cv.itemconfig(e, state=show)
 
         # confetti in caduta
         if self.confetti:
@@ -417,6 +462,8 @@ class App:
         self.root.after(50, self._tick)
 
     def _poll(self) -> None:
+        if not self.root.winfo_exists():
+            return
         try:
             while True:
                 kind, payload = self.q.get_nowait()
@@ -498,20 +545,24 @@ class App:
 
         self._run_worker(job, "Rilevamento stato", refresh_after=False)
 
+    def _set_hero(self, text: str, bg: str, outline: str, fg: str) -> None:
+        self.cv.itemconfig(self.hero, fill=bg, outline=outline)
+        self.cv.itemconfig(self.hero_text, text=text, fill=fg)
+
     def _render_status(self, status: dict) -> None:
         self.status = status
         manifest = status.get("manifest", {})
         game_dir = status.get("game_dir")
 
+        running = bool(game_dir) and bool(inst.process_running())
         if not game_dir:
             self.card_game.set("Gioco non trovato", "usa «Scegli cartella…»", CORAL)
         else:
             upd = status.get("detected_game_update") or "?"
-            running = inst.process_running()
             if running:
-                self.card_game.set(f"Build {upd}", f"⚠ in esecuzione: {', '.join(running)}", SUN)
+                self.card_game.set(f"Build {upd}", f"⚠ in esecuzione: {', '.join(inst.process_running())}", SUN)
             else:
-                self.card_game.set(f"Build {upd}", str(game_dir), MINT)
+                self.card_game.set(f"Build {upd}", short_path(str(game_dir)), MINT)
 
         tr = status.get("translation_installed")
         if tr is True:
@@ -528,11 +579,12 @@ class App:
         supported = [str(v) for v in (manifest.get("supported_game_updates") or [])]
         upd = status.get("detected_game_update")
         unknown = status.get("unknown_text_count")
+        aligned = bool(upd) and str(upd) in supported
         if not game_dir:
             self.card_align.set("—", "gioco non rilevato", SUN)
         elif unknown:
             self.card_align.set(f"⚠ {unknown} stringhe nuove", "restano in inglese (fallback)", CORAL)
-        elif upd and str(upd) in supported:
+        elif aligned:
             self.card_align.set("✓ Allineata alla patch", f"build {upd} supportata e verificata", MINT)
         elif status.get("text_resources_supported") is True:
             self.card_align.set("✓ Compatibile per contenuto", f"build {upd} non testata, testi identici", MINT)
@@ -542,17 +594,40 @@ class App:
         upd_info = status.get("update") or {}
         cur = upd_info.get("current", "?")
         if upd_info.get("error"):
-            self.card_news.set("Offline", "controllo novità non disponibile", SUN)
+            self.card_news.set("Controllo offline", "GitHub non raggiungibile, riprova più tardi", SUN)
         elif upd_info.get("update_available"):
             self.card_news.set(f"⚠ v{upd_info.get('latest')} disponibile",
                                "scarica dalla pagina Release", CORAL)
         else:
             self.card_news.set("✓ Traduzione aggiornata", f"versione corrente v{cur}", MINT)
 
+        # banner di sintesi
+        if not game_dir:
+            self._set_hero("Gioco non trovato — usa «Scegli cartella…»",
+                           "#FFE3EC", "#F3B7C8", "#B4435C")
+        elif running:
+            self._set_hero("⚠ Aniimo è in esecuzione — chiudilo prima di applicare o ripristinare",
+                           "#FFF1D6", "#E8D5A8", "#8A6A2F")
+        elif unknown:
+            self._set_hero(f"⚠ {unknown} stringhe nuove restano in inglese: serve un aggiornamento della traduzione",
+                           "#FFE3EC", "#F3B7C8", "#B4435C")
+        elif tr is False:
+            self._set_hero("Traduzione pronta — premi «✦ Applica traduzione»",
+                           "#FFF1D6", "#E8D5A8", "#8A6A2F")
+        elif tr is True and (aligned or status.get("text_resources_supported") is True):
+            if upd_info.get("update_available"):
+                self._set_hero(f"✓ Tutto pronto · novità v{upd_info.get('latest')} disponibile su GitHub",
+                               "#FFF1D6", "#E8D5A8", "#8A6A2F")
+            else:
+                self._set_hero(f"✓ Tutto pronto — traduzione installata e allineata alla build {upd}",
+                               "#DFF6EC", "#BFE3D4", "#2E6B57")
+        else:
+            self._set_hero("Stato traduzione incerto — consulta il registro sotto",
+                           "#FFF1D6", "#E8D5A8", "#8A6A2F")
+
         self.cv.itemconfig(self.footer, text=(
             f"installer v{manifest.get('translation_version', '?')} · build supportate: "
-            f"{', '.join(supported) or '—'} · backup in {inst.USER_WORK_DIR / 'backups'}"
-        ))
+            f"{', '.join(supported) or '—'} · backup: Documenti\\AniimoItalianTranslation"))
 
     # ------------------------------------------------------------ azioni
     def apply_translation(self) -> None:
@@ -609,12 +684,16 @@ class App:
         if not HAVE_WINSOUND:
             self.music_on = False
             self.music_btn.set_enabled(False)
+            self.music_btn.set_label("Musica —")
             return
         self.music_on = force_on or not self.music_on
         if self.music_on:
             self._start_music()
         else:
             winsound.PlaySound(None, winsound.SND_PURGE)
+        self.music_btn.set_label("Musica ♪" if self.music_on else "Musica ✕")
+        self.music_btn.set_style(MINT if self.music_on else "#CFC8DA",
+                                 MINT_DARK if self.music_on else "#B9B1C6")
         save_gui_settings({"music_on": self.music_on})
 
     def celebrate(self) -> None:
@@ -627,11 +706,73 @@ class App:
             self.confetti.append((item, random.uniform(-2.4, 2.4), random.uniform(-3.0, 0.0)))
 
 
+def self_screenshot(root: tk.Tk, out_path: str) -> bool:
+    """Cattura la propria finestra con PrintWindow (Modalità sviluppo, richiede Pillow)."""
+    try:
+        import ctypes
+        import ctypes.wintypes as wt
+        from PIL import Image
+    except ImportError:
+        return False
+    user32 = ctypes.windll.user32
+    gdi32 = ctypes.windll.gdi32
+    root.update_idletasks()
+    root.update()
+    hwnd = root.winfo_id()
+    # winfo_id restituisce la finestra interna: risali alla top-level
+    while user32.GetParent(hwnd):
+        hwnd = user32.GetParent(hwnd)
+    rect = wt.RECT()
+    user32.GetWindowRect(hwnd, ctypes.byref(rect))
+    w, h = max(1, rect.right - rect.left), max(1, rect.bottom - rect.top)
+    hdc = user32.GetWindowDC(hwnd)
+    mem = gdi32.CreateCompatibleDC(hdc)
+    bmp = gdi32.CreateCompatibleBitmap(hdc, w, h)
+    gdi32.SelectObject(mem, bmp)
+    for _ in range(3):
+        root.update()
+        user32.PrintWindow(hwnd, mem, 2)  # PW_RENDERFULLCONTENT
+    user32.InvalidateRect(hwnd, None, True)
+    root.update()
+    user32.PrintWindow(hwnd, mem, 2)
+
+    class BMI(ctypes.Structure):
+        _fields_ = [("biSize", wt.DWORD), ("biWidth", wt.LONG), ("biHeight", wt.LONG),
+                    ("biPlanes", wt.WORD), ("biBitCount", wt.WORD), ("biCompression", wt.DWORD),
+                    ("biSizeImage", wt.DWORD), ("biXPelsPerMeter", wt.LONG),
+                    ("biYPelsPerMeter", wt.LONG), ("biClrUsed", wt.DWORD),
+                    ("biClrImportant", wt.DWORD)]
+
+    bmi = BMI()
+    bmi.biSize = ctypes.sizeof(BMI)
+    bmi.biWidth, bmi.biHeight = w, -h
+    bmi.biPlanes, bmi.biBitCount, bmi.biCompression = 1, 32, 0
+    buf = (ctypes.c_char * (w * h * 4))()
+    gdi32.GetDIBits(mem, bmp, 0, h, buf, ctypes.byref(bmi), 0)
+    gdi32.DeleteObject(bmp)
+    gdi32.DeleteDC(mem)
+    user32.ReleaseDC(hwnd, hdc)
+    img = Image.frombytes("RGBA", (w, h), bytes(buf), "raw", "BGRA", 0, 1)
+    img.convert("RGB").save(out_path)
+    return True
+
+
 def main() -> int:
     smoke = "--smoke" in sys.argv
+    foto = sys.argv[sys.argv.index("--foto") + 1] if "--foto" in sys.argv else None
     root = tk.Tk()
-    App(root, smoke=smoke)
-    if smoke:
+    app = App(root, smoke=smoke or bool(foto))
+    if foto:
+        def scatta() -> None:
+            time.sleep(4.0)  # lascia popolare le card di stato
+            for _ in range(30):
+                root.update()
+                time.sleep(0.1)
+            ok = self_screenshot(root, foto)
+            print("FOTO:", "OK" if ok else "FALLITA")
+            root.destroy()
+        threading.Thread(target=scatta, daemon=True).start()
+    elif smoke:
         root.after(1500, root.destroy)
     root.mainloop()
     return 0
