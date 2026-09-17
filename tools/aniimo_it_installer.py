@@ -1332,14 +1332,54 @@ def normalize_version(version: str) -> tuple[int, ...]:
     return tuple(nums + [stable_rank] + suffix_nums)
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def _latest_tag_via_redirect(repo: str) -> dict | None:
+    """Ultimo tag di release via pagina web (reindirizzamento), senza limiti API.
+
+    GitHub reindirizza /releases/latest al tag più recente; l'endpoint web non
+    è soggetto al limite orario di api.github.com. Ritorna None se il repo non
+    ha release (404 senza reindirizzamento). Gli errori di rete propagano.
+    """
+    if not repo:
+        return None
+    url = f"https://github.com/{repo}/releases/latest"
+    opener = urllib.request.build_opener(_NoRedirect)
+    request = urllib.request.Request(url, headers={"User-Agent": "AniimoItalianTranslationInstaller"})
+    location = ""
+    try:
+        with opener.open(request, timeout=8) as response:
+            location = response.headers.get("Location") or response.url or ""
+    except urllib.error.HTTPError as exc:
+        location = (exc.headers.get("Location") or "") if exc.code in (301, 302, 303, 307, 308) else ""
+    if "/tag/" in location:
+        tag = location.rstrip("/").rsplit("/tag/", 1)[1]
+        return {"tag_name": tag, "html_url": f"https://github.com/{repo}/releases", "fallback": True}
+    return None
+
+
 def fetch_latest_release(manifest: dict) -> dict | None:
     repo = manifest.get("github_repo")
     if not repo:
         return None
     url = f"https://api.github.com/repos/{repo}/releases/latest"
     request = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json", "User-Agent": "AniimoItalianTranslationInstaller"})
-    with urllib.request.urlopen(request, timeout=8) as response:
-        return json.loads(response.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(request, timeout=8) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except Exception as api_error:
+        # L'API ha un limite orario per IP (403 quando esaurito) e risponde 404
+        # per i repo senza release: in entrambi i casi la pagina web risponde.
+        try:
+            fallback = _latest_tag_via_redirect(repo)
+        except (urllib.error.URLError, TimeoutError, OSError):
+            raise api_error  # rete realmente giù: rilancia l'errore originale
+        if fallback is not None:
+            return fallback
+        return None  # nessuna release su nessun canale: non è un errore
 
 
 def find_installer_asset(release: dict) -> dict | None:
@@ -1349,7 +1389,49 @@ def find_installer_asset(release: dict) -> dict | None:
     return None
 
 
+UPDATE_CACHE_PATH = USER_WORK_DIR / "update_check_cache.json"
+
+
+def _load_update_cache() -> dict | None:
+    """Ultimo esito del controllo aggiornamenti, se ancora fresco.
+
+    Successi validi 30 minuti, errori 5: evita di martellare l'API di GitHub
+    (limite orario per IP) a ogni rilevamento stato.
+    """
+    try:
+        data = json.loads(UPDATE_CACHE_PATH.read_text(encoding="utf-8"))
+        payload = data.get("payload")
+        if not isinstance(payload, dict):
+            return None
+        ttl = 300.0 if payload.get("error") else 1800.0
+        if time.time() - float(data.get("ts", 0)) < ttl:
+            out = dict(payload)
+            out["cached"] = True
+            if data.get("checked_at"):
+                out.setdefault("checked_at", data["checked_at"])
+            return out
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def _store_update_cache(result: dict) -> None:
+    try:
+        UPDATE_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        payload = {k: v for k, v in result.items() if k not in ("release", "asset")}
+        UPDATE_CACHE_PATH.write_text(json.dumps({
+            "ts": time.time(),
+            "checked_at": time.strftime("%H:%M"),
+            "payload": payload,
+        }), encoding="utf-8")
+    except OSError:
+        pass
+
+
 def check_for_updates(silent: bool = False) -> dict:
+    cached = _load_update_cache()
+    if cached is not None:
+        return cached
     manifest = local_manifest()
     current = str(manifest.get("translation_version", "0.0.0"))
     repo = manifest.get("github_repo", "")
@@ -1361,28 +1443,43 @@ def check_for_updates(silent: bool = False) -> dict:
         "releases_url": releases_url,
         "release": None,
         "asset": None,
+        "checked_at": time.strftime("%H:%M"),
     }
     try:
         latest = fetch_latest_release(manifest)
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as exc:
         result["error"] = str(exc)
+        result["rate_limited"] = "403" in str(exc)
         if not silent:
             print("Controllo aggiornamenti non disponibile. Puoi comunque installare normalmente.")
+        _store_update_cache(result)
         return result
-    if not latest:
-        return result
-    tag = str(latest.get("tag_name") or latest.get("name") or current)
-    result["release"] = latest
-    result["asset"] = find_installer_asset(latest)
-    result["latest"] = tag
-    result["releases_url"] = latest.get("html_url") or releases_url
-    result["update_available"] = normalize_version(tag) > normalize_version(current)
-    if not silent:
-        if result["update_available"]:
-            print("È disponibile una release più recente della traduzione:", tag)
-            print("Download:", result["releases_url"])
-        else:
-            print("Traduzione aggiornata:", current)
+    if latest:
+        tag = str(latest.get("tag_name") or latest.get("name") or current)
+        result["release"] = latest
+        result["asset"] = find_installer_asset(latest)
+        result["latest"] = tag
+        result["releases_url"] = latest.get("html_url") or releases_url
+        result["update_available"] = normalize_version(tag) > normalize_version(current)
+        if not silent:
+            if result["update_available"]:
+                print("È disponibile una release più recente della traduzione:", tag)
+                print("Download:", result["releases_url"])
+            else:
+                print("Traduzione aggiornata:", current)
+    # novità a monte (repo origine da cui questa fork deriva), via web
+    upstream = str(manifest.get("upstream_repo") or "")
+    if upstream and upstream != repo:
+        try:
+            up = _latest_tag_via_redirect(upstream)
+        except (urllib.error.URLError, TimeoutError, OSError):
+            up = None
+        if up:
+            result["upstream_latest"] = str(up.get("tag_name") or "")
+            result["upstream_url"] = up.get("html_url") or f"https://github.com/{upstream}/releases"
+            if normalize_version(result["upstream_latest"]) > normalize_version(current):
+                result["upstream_update_available"] = True
+    _store_update_cache(result)
     return result
 
 

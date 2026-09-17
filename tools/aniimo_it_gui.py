@@ -784,13 +784,22 @@ class App:
 
         upd_info = status.get("update") or {}
         cur = upd_info.get("current", "?")
+        checked = f" · controllo {upd_info['checked_at']}" if upd_info.get("checked_at") else ""
         if upd_info.get("error"):
-            self.card_news.set("Controllo offline", "GitHub non raggiungibile, riprova più tardi", SUN)
+            if upd_info.get("rate_limited"):
+                self.card_news.set("Limite GitHub temporaneo",
+                                   "troppe richieste: si sblocca entro un'ora", SUN)
+            else:
+                self.card_news.set("Controllo offline",
+                                   "GitHub non raggiungibile, riprova più tardi", SUN)
         elif upd_info.get("update_available"):
             self.card_news.set(f"⚠ v{upd_info.get('latest')} disponibile",
                                "scarica dalla pagina Release", CORAL)
+        elif upd_info.get("upstream_update_available"):
+            self.card_news.set(f"⚠ v{upd_info.get('upstream_latest')} a monte",
+                               f"nuova release di Sici29{checked}", SUN)
         else:
-            self.card_news.set("✓ Traduzione aggiornata", f"versione corrente v{cur}", MINT)
+            self.card_news.set("✓ Traduzione aggiornata", f"versione corrente v{cur}{checked}", MINT)
 
         # banner di sintesi
         if not game_dir:
@@ -805,6 +814,9 @@ class App:
         elif tr is True and (aligned or status.get("text_resources_supported") is True):
             if upd_info.get("update_available"):
                 self._set_hero(f"✓ Tutto pronto · novità v{upd_info.get('latest')} su GitHub", HERO_WARN)
+            elif upd_info.get("upstream_update_available"):
+                self._set_hero(f"✓ Tutto pronto · v{upd_info.get('upstream_latest')} disponibile a monte (Sici29)",
+                               HERO_WARN)
             else:
                 self._set_hero(f"✓ Tutto pronto — traduzione installata e allineata alla build {upd}", HERO_OK)
         else:
