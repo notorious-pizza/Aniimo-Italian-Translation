@@ -39,6 +39,10 @@ TOOLS_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(TOOLS_DIR))
 import aniimo_it_installer as inst  # noqa: E402
 
+# base risorse: in un bundle PyInstaller i dati stanno in _MEIPASS,
+# nello sviluppo nella root della repo
+ASSETS_DIR = Path(getattr(sys, "_MEIPASS", TOOLS_DIR.parent)) / "assets"
+
 try:
     import winsound
     HAVE_WINSOUND = True
@@ -344,7 +348,7 @@ class App:
         root.attributes("-topmost", True)
         root.after(4000, lambda: root.attributes("-topmost", False))
         try:
-            root.iconbitmap(str(TOOLS_DIR.parent / "assets" / "aniimo-italian-installer-icon.ico"))
+            root.iconbitmap(str(ASSETS_DIR / "aniimo-italian-installer-icon.ico"))
         except tk.TclError:
             pass
 
@@ -795,9 +799,6 @@ class App:
         elif upd_info.get("update_available"):
             self.card_news.set(f"⚠ v{upd_info.get('latest')} disponibile",
                                "scarica dalla pagina Release", CORAL)
-        elif upd_info.get("upstream_update_available"):
-            self.card_news.set(f"⚠ v{upd_info.get('upstream_latest')} a monte",
-                               f"nuova release di Sici29{checked}", SUN)
         else:
             self.card_news.set("✓ Traduzione aggiornata", f"versione corrente v{cur}{checked}", MINT)
 
@@ -814,9 +815,6 @@ class App:
         elif tr is True and (aligned or status.get("text_resources_supported") is True):
             if upd_info.get("update_available"):
                 self._set_hero(f"✓ Tutto pronto · novità v{upd_info.get('latest')} su GitHub", HERO_WARN)
-            elif upd_info.get("upstream_update_available"):
-                self._set_hero(f"✓ Tutto pronto · v{upd_info.get('upstream_latest')} disponibile a monte (Sici29)",
-                               HERO_WARN)
             else:
                 self._set_hero(f"✓ Tutto pronto — traduzione installata e allineata alla build {upd}", HERO_OK)
         else:

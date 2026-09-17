@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.5 - 2026-09-17
+
+- **Gestione interamente dalla fork**: rimosso il monitoraggio delle release a monte; le novità riguardano solo questa repo. Prima release autonoma su GitHub con eseguibili precompilati (`Aniimo-Italian-Translation.exe` installer CLI e `Aniimo-Centro-Controllo.exe` GUI): anche l'auto-aggiornamento ora punta esclusivamente a questa repo.
+- Fix «Controllo offline» errato nella card Novità: fallback via pagina web non soggetta al limite API, «nessuna release» stato valido, cache 30/5 minuti, orario ultimo controllo in card, messaggio dedicato per il limite temporaneo.
+- Testi della traduzione invariati.
+
 ## 0.4.4 - 2026-09-17
 
 - **Nuovo Centro di controllo grafico** (`tools/aniimo_it_gui.py` + `Avvia_Traduzione_GUI.bat`): interfaccia Tkinter con mascotte animata, tema pastello e musichetta chiptune sintetizzata al volo. Mostra in un colpo d'occhio gioco rilevato e build, stato installazione traduzione (versione e % corrispondenza), allineamento alla patch corrente (incluse eventuali stringhe nuove in fallback inglese) e novità da GitHub; pulsanti per applicare la traduzione, ripristinare il backup, scegliere/aprire la cartella del gioco e aprire le release, con registro attività in streaming.

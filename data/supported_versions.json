@@ -1,8 +1,7 @@
 {
   "project": "Aniimo Italian Translation",
-  "translation_version": "0.4.4",
+  "translation_version": "0.4.5",
   "github_repo": "notorious-pizza/Aniimo-Italian-Translation",
-  "upstream_repo": "Sici29/Aniimo-Italian-Translation",
   "github_releases_url": "https://github.com/notorious-pizza/Aniimo-Italian-Translation/releases",
   "locale": "it-IT",
   "default_target_language_slot": "en",

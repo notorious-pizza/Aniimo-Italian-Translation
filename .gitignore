@@ -4,6 +4,7 @@ build/
 dist/
 *.spec
 !Aniimo-Italian-Translation.spec
+!Aniimo-Centro-Controllo.spec
 *.zip
 *.7z
 *.rar

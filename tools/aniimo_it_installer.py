@@ -1467,18 +1467,6 @@ def check_for_updates(silent: bool = False) -> dict:
                 print("Download:", result["releases_url"])
             else:
                 print("Traduzione aggiornata:", current)
-    # novità a monte (repo origine da cui questa fork deriva), via web
-    upstream = str(manifest.get("upstream_repo") or "")
-    if upstream and upstream != repo:
-        try:
-            up = _latest_tag_via_redirect(upstream)
-        except (urllib.error.URLError, TimeoutError, OSError):
-            up = None
-        if up:
-            result["upstream_latest"] = str(up.get("tag_name") or "")
-            result["upstream_url"] = up.get("html_url") or f"https://github.com/{upstream}/releases"
-            if normalize_version(result["upstream_latest"]) > normalize_version(current):
-                result["upstream_update_available"] = True
     _store_update_cache(result)
     return result
 
