@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.3 - 2026-09-17
+
+- Audit indipendente di fedeltà eseguito su installazione reale (Steam, update `3544783`, revisione `dbb6cb6c…`): copertura 112.187/112.187 chiavi, fingerprint build combaciante, pairing SHA-256 per chiave 112.187/112.187, 0 violazioni di placeholder/newline/spazi, 0 residui inglesi, 0 errori di significato nel campione stratificato di 324 coppie. Report completo in `AUDIT_FIDELITA_v0.4.2.md`.
+- Corrette 2 occorrenze di "Dipartimento Arte della Battaglia" allineandole alla forma dominante "Dipartimento Arti da Battaglia" (13 occorrenze): chiavi `1090869768` e `2068081817`.
+- Corretta 1 incoerenza di genere sul personaggio Shelly ("La Shelly derubata" → "Lo Shelly derubato", chiave `1799612016`), coerente con le altre 14 occorrenze maschili dello stesso NPC.
+- Aggiunti gli strumenti di audit riutilizzabili in `tools/audit/` (copertura, controlli automatici globali, varianti terminologiche, applicazione fix) e i dati prodotti in `data/audit_*_v0.4.2.*`.
+- Fork indipendente mantenuta da notorious-pizza; traduzione originale di Sici29 (MIT). Aggiornati URL del manifest e dei crediti all'indirizzo della fork.
+
 ## 0.3.18 Beta - 2026-07-18
 
 - Verificata la build Aniimo `3064863`: 93.029 chiavi, nessuna aggiunta o rimozione e nessuna sorgente English modificata rispetto alla build `3062823`; compatibilità riconosciuta automaticamente.

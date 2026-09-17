@@ -1,0 +1,68 @@
+[
+  {
+    "key": "1151696762",
+    "en": "Free",
+    "it": "<size=-6>Gratis</size>",
+    "diff": "EN+{} IT+{'<size=-6>': 1, '</size>': 1}"
+  },
+  {
+    "key": "1162685661",
+    "en": "<Twenty>\nI spent my twentieth birthday with Tucker.\nIt was a rare sunny day in the Mistwoods, and we met up at <style=Hint_BgD>our old spot</style>.\nTucker always liked burying himself there, and no o",
+    "it": "<Vent'anni>\nHo trascorso il mio ventesimo compleanno con Tucker.\nEra una di quelle rare giornate di sole nei Mistwoods, e ci siamo incontrati al <style=Hint_BgD>nostro solito posto</style>.\nA Tucker p",
+    "diff": "EN+{'<Twenty>': 1} IT+{\"<Vent'anni>\": 1}"
+  },
+  {
+    "key": "1166013611",
+    "en": "<Title Name (Placeholder) Title>",
+    "it": "<Nome titolo (Segnaposto) Titolo>",
+    "diff": "EN+{'<Title Name (Placeholder) Title>': 1} IT+{'<Nome titolo (Segnaposto) Titolo>': 1}"
+  },
+  {
+    "key": "1169018241",
+    "en": "Free",
+    "it": "<size=-6>Gratis</size>",
+    "diff": "EN+{} IT+{'<size=-6>': 1, '</size>': 1}"
+  },
+  {
+    "key": "1565564594",
+    "en": "Free",
+    "it": "<size=-6>Gratis</size>",
+    "diff": "EN+{} IT+{'<size=-6>': 1, '</size>': 1}"
+  },
+  {
+    "key": "1595057399",
+    "en": "Free",
+    "it": "<size=-6>Gratis</size>",
+    "diff": "EN+{} IT+{'<size=-6>': 1, '</size>': 1}"
+  },
+  {
+    "key": "1731354546",
+    "en": "Free",
+    "it": "<size=-6>Gratis</size>",
+    "diff": "EN+{} IT+{'<size=-6>': 1, '</size>': 1}"
+  },
+  {
+    "key": "1775351772",
+    "en": "Tab<占位>",
+    "it": "Scheda<segnaposto>",
+    "diff": "EN+{} IT+{'<segnaposto>': 1}"
+  },
+  {
+    "key": "1806810029",
+    "en": "Free",
+    "it": "<size=-6>Gratis</size>",
+    "diff": "EN+{} IT+{'<size=-6>': 1, '</size>': 1}"
+  },
+  {
+    "key": "1942786010",
+    "en": "Free",
+    "it": "<size=-6>Gratis</size>",
+    "diff": "EN+{} IT+{'<size=-6>': 1, '</size>': 1}"
+  },
+  {
+    "key": "2139150407",
+    "en": "Free",
+    "it": "<size=-6>Gratis</size>",
+    "diff": "EN+{} IT+{'<size=-6>': 1, '</size>': 1}"
+  }
+]

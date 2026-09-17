@@ -1,8 +1,11 @@
 # Aniimo — Traduzione italiana
 
-## Release client Steam — v0.4.2
+## Release client Steam — v0.4.3 (fork con audit indipendente)
 
-[☕ **Offrimi un caffè e sostieni il progetto**](https://buymeacoffee.com/sici29)
+> **Fork** della traduzione originale di [Sici29](https://github.com/Sici29/Aniimo-Italian-Translation) (MIT), mantenuta da [notorious-pizza](https://github.com/notorious-pizza).
+> Questa fork ha superato un **audit indipendente di fedeltà** sulla build Steam `3544783` (copertura 112.187/112.187 chiavi, pairing SHA-256 perfetto, 0 errori di significato nel campione di 324 coppie) e applica 3 allineamenti terminologici. Report completo: [`AUDIT_FIDELITA_v0.4.2.md`](AUDIT_FIDELITA_v0.4.2.md).
+
+[☕ **Sostieni la traduzione originale di Sici29**](https://buymeacoffee.com/sici29)
 
 **Traduzione italiana completa al 100,00% per Aniimo (build Steam 3544783), verificata e funzionante in gioco.**
 
@@ -25,7 +28,7 @@ L'installer crea un backup automatico. Per tornare agli originali, chiudi il gio
 
 **Modifica file locali del client; non è un loader esterno.** Traduzione amatoriale non ufficiale. L'EXE non è firmato digitalmente e Windows può mostrare SmartScreen.
 
-[Segnala un problema](https://github.com/Sici29/Aniimo-Italian-Translation/issues) · [Note di rilascio](RELEASE_NOTES_v0.4.2.md) · [Verifiche tecniche](BUILD_QA_v0.4.2.md)
+[Segnala un problema](https://github.com/notorious-pizza/Aniimo-Italian-Translation/issues) · [Note di rilascio](RELEASE_NOTES_v0.4.3.md) · [Audit di fedeltà](AUDIT_FIDELITA_v0.4.2.md) · [Verifiche tecniche](BUILD_QA_v0.4.2.md)
 
 <details>
 <summary>Documentazione storica delle versioni Closed Beta — non applicabile al client finale</summary>
@@ -44,7 +47,7 @@ La traduzione viene revisionata e aggiornata gratuitamente. Se ti è utile e vuo
 
 ### 1. Scarica un solo file
 
-[**Scarica l'ultima versione da GitHub Releases**](https://github.com/Sici29/Aniimo-Italian-Translation/releases/latest)
+[**Scarica l'ultima versione da GitHub Releases**](https://github.com/notorious-pizza/Aniimo-Italian-Translation/releases/latest)
 
 Il file da scaricare è:
 
@@ -219,7 +222,7 @@ L'installer mostra il collegamento GitHub direttamente nel pannello. Con l'opzio
 
 ## Segnala un problema
 
-Puoi usare la sezione [Issues](https://github.com/Sici29/Aniimo-Italian-Translation/issues) per segnalare:
+Puoi usare la sezione [Issues](https://github.com/notorious-pizza/Aniimo-Italian-Translation/issues) per segnalare:
 
 - una frase poco naturale o rimasta in inglese;
 - un errore di genere o concordanza;

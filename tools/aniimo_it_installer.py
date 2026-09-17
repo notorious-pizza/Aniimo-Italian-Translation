@@ -2630,7 +2630,7 @@ def print_status_panel(status: dict, colors: bool) -> None:
     print(color_text("COSA FARE", ConsoleColor.BOLD, colors))
     print(overview["action"])
     print("=" * 58)
-    print("GitHub: https://github.com/Sici29/Aniimo-Italian-Translation")
+    print("GitHub: https://github.com/notorious-pizza/Aniimo-Italian-Translation")
 
 
 def print_technical_status(status: dict, colors: bool) -> None:
@@ -2660,12 +2660,13 @@ def print_technical_status(status: dict, colors: bool) -> None:
 
 def show_credits() -> int:
     manifest = local_manifest()
-    github_url = str(manifest.get("github_project_url") or "https://github.com/Sici29/Aniimo-Italian-Translation")
+    github_url = str(manifest.get("github_project_url") or "https://github.com/notorious-pizza/Aniimo-Italian-Translation")
     issues_url = str(manifest.get("github_issues_url") or github_url + "/issues")
     support_url = str(manifest.get("support_url") or "https://buymeacoffee.com/sici29")
     print("Aniimo - Traduzione Italiana")
     print("=" * 58)
-    print("Progetto e traduzione : Sici29")
+    print("Traduzione originale  : Sici29 (github.com/Sici29)")
+    print("Fork e audit          : notorious-pizza")
     print("GitHub                :", github_url)
     print("Segnala un problema   :", issues_url)
     print("Sostieni il progetto  :", support_url)

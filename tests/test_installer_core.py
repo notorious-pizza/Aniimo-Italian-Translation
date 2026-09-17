@@ -904,7 +904,7 @@ class DetectionTests(unittest.TestCase):
         self.assertIn("Premi Invio per aggiornarla.", panel)
         self.assertNotIn("Revisione hot update", panel)
         self.assertNotIn("Formato date dinamiche", panel)
-        self.assertIn("github.com/Sici29/Aniimo-Italian-Translation", panel)
+        self.assertIn("github.com/notorious-pizza/Aniimo-Italian-Translation", panel)
 
     def test_status_panel_confirms_an_exact_translation_match(self) -> None:
         status = {
