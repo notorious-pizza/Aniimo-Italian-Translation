@@ -922,9 +922,16 @@ class App:
                 self.card_tr.set("Stato incerto", "archivio non leggibile", SUN)
 
             unknown = sel.get("unknown_text_count")
+            res_issue = sel.get("resources_issue")
             aligned = bool(upd != "?" and str(upd) in supported)
             if not sel.get("lua_ready"):
                 self.card_align.set("Dati non scaricati", "avvia questa copia del gioco una volta", SUN)
+            elif res_issue == "native_font_missing":
+                self.card_align.set("⚠ Download incompleto",
+                                    "avvia il gioco e lascia finire lo scaricamento", CORAL)
+            elif res_issue == "native_font_changed":
+                self.card_align.set("⚠ Build da verificare",
+                                    "risorse native non riconosciute", SUN)
             elif unknown:
                 self.card_align.set(f"⚠ {unknown} stringhe nuove", "restano in inglese (fallback)", CORAL)
             elif aligned:
@@ -941,6 +948,12 @@ class App:
             elif not sel.get("lua_ready"):
                 self._set_hero("Questa copia non ha ancora scaricato i dati del gioco: "
                                "avviala una volta, poi applica la traduzione", HERO_WARN)
+            elif sel.get("resources_issue") == "native_font_missing":
+                self._set_hero("⚠ Download del gioco non completo su questa copia: "
+                               "avviala e lascia finire lo scaricamento, poi riprova", HERO_BAD)
+            elif sel.get("resources_issue") == "native_font_changed":
+                self._set_hero("⚠ Risorse native non riconosciute su questa copia: "
+                               "serve una nuova verifica della build prima di applicare", HERO_WARN)
             elif running:
                 self._set_hero("⚠ Aniimo è in esecuzione — chiudilo prima di applicare o ripristinare", HERO_WARN)
             elif unknown:
@@ -987,6 +1000,12 @@ class App:
                                 "Questa installazione non è al momento patchabile:\n"
                                 "se è del Microsoft Store le cartelle sono protette, altrimenti\n"
                                 "avvia quella copia del gioco una volta per scaricare i dati.")
+            return False
+        if sel.get("resources_issue") == "native_font_missing":
+            messagebox.showinfo(APP_TITLE,
+                                "Il download del gioco non è completo su questa copia:\n"
+                                "avviala (o il launcher) e lascia finire lo scaricamento,\n"
+                                "poi premi ↻ Aggiorna stato e riprova.")
             return False
         return True
 

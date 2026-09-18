@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.9 - 2026-09-18
+
+- **Diagnosi chiara per i download incompleti**: quando una copia di Aniimo non ha finito di scaricare le risorse (bundle font nativi assenti), l'installazione non si blocca più con l'ambiguo «Risorse native cambiate» ma spiega «Download del gioco non completo: avvia il gioco e lascia finire lo scaricamento». La GUI lo mostra in anticipo nella card Allineamento e nel banner, e il pulsante Applica dà lo stesso suggerimento. «Risorse native cambiate» resta solo per build realmente diverse (risorse presenti ma non riconosciute).
+
 ## 0.4.8 - 2026-09-18
 
 - **Rilevamento installazioni irrobustito**: timeout PowerShell più larghi (8→15-20 s) e secondo tentativo automatico quando le sorgenti lente non rispondono (es. gioco a schermo intero che satura il sistema e faceva perdere copie dallo scan); il registro attività ora scrive quante installazioni sono state rilevate, con suggerimento se meno di due.

@@ -710,6 +710,12 @@ def describe_installation(game_dir: Path, source: str | None = None) -> dict:
         )
     except Exception:  # noqa: BLE001 - un archivio illeggibile non blocca le altre
         entry["translation_installed"] = None
+    try:
+        entry["resources_issue"] = (
+            technical_compatibility_status(resolve_paths(game_dir)).get("issues") or [None]
+        )[0]
+    except Exception:  # noqa: BLE001
+        entry["resources_issue"] = None
     return entry
 
 
@@ -1983,6 +1989,7 @@ def technical_compatibility_status(paths: GamePaths) -> dict:
             issues.append("native_font_manifest")
         else:
             found_match = False
+            found_any_file = False
             for bundle in bundles:
                 relative = Path(bundle["relative"])
                 if relative.is_absolute() or ".." in relative.parts:
@@ -2001,11 +2008,16 @@ def technical_compatibility_status(paths: GamePaths) -> dict:
                             matches = list(steam_dir.glob(f"*_{digest}.uab"))
                             if matches:
                                 candidate = matches[0]
-                if candidate.is_file() and sha256_file(candidate) == bundle["sha256"]:
-                    found_match = True
-                    break
+                if candidate.is_file():
+                    found_any_file = True
+                    if sha256_file(candidate) == bundle["sha256"]:
+                        found_match = True
+                        break
             if not found_match:
-                issues.append("native_font_changed")
+                # bundle assenti = download del gioco non completato;
+                # bundle presenti ma diversi = build non ancora verificata
+                issues.append("native_font_missing" if not found_any_file
+                              else "native_font_changed")
         return {"supported": not issues, "issues": issues,
                 "date_italian": False, "countdown_italian": False,
                 "font_accented": not issues, "font_validation": "static_glyph_coverage",
@@ -2272,8 +2284,15 @@ def record_created_i18n_files(backup: Path, patch_dir: Path) -> list[str]:
 
 
 def build_patch(paths: GamePaths, target_langs: list[str], force: bool) -> tuple[Path, dict]:
-    if final_text_profile() and not technical_compatibility_status(paths)["supported"]:
-        raise RuntimeError("Risorse native cambiate: questa build richiede una nuova verifica.")
+    if final_text_profile():
+        tech = technical_compatibility_status(paths)
+        if not tech["supported"]:
+            if "native_font_missing" in tech["issues"]:
+                raise RuntimeError(
+                    "Risorse native mancanti: il download del gioco non è completo. "
+                    "Avvia il gioco (o il launcher) e lascia finire il download, poi riprova."
+                )
+            raise RuntimeError("Risorse native cambiate: questa build richiede una nuova verifica.")
     patch_dir = USER_WORK_DIR / "patches" / time.strftime("%Y%m%d-%H%M%S")
     replacements: dict[str, bytes] = {}
     stats: dict[str, object] = {
