@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.6 - 2026-09-18
+
+- **Supporto multi-installazione**: il Centro di controllo rileva tutte le copie di Aniimo sul PC (Steam di ogni libreria, launcher Pawprint, Microsoft Store, cartelle manuali) e mostra una striscia di chip per sceglierle — card, banner e azioni agiscono sull'installazione selezionata, con selezione ricordata tra gli avvii.
+- **Nuova azione «✦✦ Applica a TUTTE le installazioni»**: applica la traduzione in sequenza a ogni copia patchabile, con backup ciascuna e log per installazione.
+- Versione **Microsoft Store rilevata ma protetta** (cartelle UWP): mostrata come chip in sola lettura con spiegazione, non patchabile.
+- Installazioni mai avviate: rilevate come «dati non scaricati» con invito ad avviare il gioco una volta (l'archivio Lua non esiste ancora); probe di scrivibilità reale che crea l'area hot-update se assente.
+- Nuovo sottocomando CLI `list`: elenca le installazioni trovate con build, stato traduzione e scrivibilità.
+- Testi della traduzione invariati.
+
 ## 0.4.5 - 2026-09-17
 
 - **Gestione interamente dalla fork**: rimosso il monitoraggio delle release a monte; le novità riguardano solo questa repo. Prima release autonoma su GitHub con eseguibili precompilati (`Aniimo-Italian-Translation.exe` installer CLI e `Aniimo-Centro-Controllo.exe` GUI): anche l'auto-aggiornamento ora punta esclusivamente a questa repo.

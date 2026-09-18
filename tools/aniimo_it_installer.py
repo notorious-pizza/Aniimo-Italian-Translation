@@ -623,6 +623,129 @@ def launcher_game_dirs(launcher: Path) -> list[Path]:
         return []
 
 
+def msstore_aniimo_dirs() -> list[Path]:
+    """Cartelle di eventuali versioni Microsoft Store (query Appx, sola lettura)."""
+    if os.name != "nt":
+        return []
+    script = (
+        "Get-AppxPackage | Where-Object { $_.Name -match 'Aniimo|Pawprint' } | "
+        "ForEach-Object { $_.InstallLocation }"
+    )
+    try:
+        output = subprocess.check_output(["powershell", "-NoProfile", "-Command", script],
+                                         text=True, stderr=subprocess.DEVNULL, timeout=12,
+                                         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except (OSError, subprocess.SubprocessError):
+        return []
+    dirs: list[Path] = []
+    for line in output.splitlines():
+        raw = line.strip()
+        if raw:
+            base = Path(raw)
+            dirs.extend([base, base / "game"])
+    return dirs
+
+
+def probe_game_writable(game_dir: Path) -> bool:
+    """Probe reale di scrivibilità nell'area hot-update.
+
+    Crea le cartelle se mancano (installazione mai avviata) e scrive/elimina un
+    file vuoto: è la stessa operazione che farebbe l'installer applicando la patch.
+    """
+    target = game_dir / "Aniimo_Data" / "cvs" / "res"
+    try:
+        target.mkdir(parents=True, exist_ok=True)
+        probe = target / ".aniimo_it_write_probe"
+        probe.write_text("", encoding="utf-8")
+        probe.unlink()
+        return True
+    except OSError:
+        return False
+
+
+def lua_overlay_ready(game_dir: Path) -> bool:
+    """True se l'archivio Lua esiste già (il gioco è stato avviato almeno una volta)."""
+    for rel in LUA_RELS:
+        if (game_dir / rel / XDF_NAME).is_file() and (game_dir / rel / XDT_NAME).is_file():
+            return True
+    return False
+
+
+def describe_installation(game_dir: Path, source: str | None = None) -> dict:
+    """Stato completo di una singola installazione (sorgente dedotta se omessa)."""
+    if source is None:
+        try:
+            resolved = game_dir.resolve()
+        except OSError:
+            resolved = game_dir
+        parts_lower = [part.casefold() for part in resolved.parts]
+        if "windowsapps" in parts_lower:
+            source = "msstore"
+        elif "steamapps" in parts_lower:
+            source = "steam"
+        else:
+            source = "standalone"
+    entry: dict = {
+        "path": game_dir,
+        "source": source,
+        "writable": source != "msstore" and probe_game_writable(game_dir),
+        "lua_ready": lua_overlay_ready(game_dir),
+    }
+    try:
+        info = read_game_version_info(game_dir)
+        entry["update"] = info.get("update")
+        entry["revision"] = info.get("revision")
+    except (OSError, ValueError):
+        entry["update"] = None
+        entry["revision"] = None
+    try:
+        tr = detect_translation_installation(game_dir)
+        entry["translation_installed"] = tr.get("installed")
+        entry["translation_match_ratio"] = tr.get("ratio")
+        entry["translation_slot"] = tr.get("detected_slot")
+        entry["unknown_text_count"] = tr.get("unknown_text_count")
+        entry["texts_supported"] = tr.get("texts_supported")
+        entry["installed_translation_version"] = (
+            recorded_translation_version(game_dir) if tr.get("installed") else None
+        )
+    except Exception:  # noqa: BLE001 - un archivio illeggibile non blocca le altre
+        entry["translation_installed"] = None
+    return entry
+
+
+def list_game_installations() -> list[dict]:
+    """Tutte le installazioni ANIIMO trovate, con sorgente, build e stato traduzione.
+
+    Le cartelle Microsoft Store (WindowsApps) risultano writable=False: le ACL
+    UWP le rendono non patchabili senza appropriarsi delle cartelle di sistema.
+    """
+    candidates: list[Path] = []
+    try:
+        candidates.extend(candidate_game_dirs())
+    except Exception:  # noqa: BLE001
+        pass
+    candidates.extend(msstore_aniimo_dirs())
+
+    results: list[dict] = []
+    seen: set[Path] = set()
+    for d in candidates:
+        try:
+            resolved = d.resolve()
+        except OSError:
+            continue
+        if resolved in seen or not looks_like_game_dir(d):
+            continue
+        seen.add(resolved)
+        results.append(describe_installation(d))
+
+    def _build_key(e: dict) -> int:
+        upd = e.get("update")
+        return int(upd) if upd and str(upd).isdigit() else 0
+
+    results.sort(key=_build_key, reverse=True)
+    return results
+
+
 def candidate_game_dirs() -> list[Path]:
     candidates: list[Path] = []
     env = os.environ.get("ANIIMO_GAME_DIR")
@@ -2272,6 +2395,28 @@ def latest_backup_for_game(game_dir: Path) -> Path:
     )
 
 
+def cmd_list(_args: argparse.Namespace) -> int:
+    installs = list_game_installations()
+    if not installs:
+        print("Nessuna installazione di Aniimo trovata.")
+        print("Usa --game-dir per indicarla manualmente.")
+        return 1
+    labels = {"steam": "Steam", "standalone": "Standalone/Launcher",
+              "msstore": "Microsoft Store", "manuale": "Manuale"}
+    print(f"Installazioni trovate: {len(installs)}")
+    for i, entry in enumerate(installs, 1):
+        tr = entry.get("translation_installed")
+        tr_txt = "installata" if tr is True else "non installata" if tr is False else "incerto"
+        if entry.get("installed_translation_version") and tr is True:
+            tr_txt += f" (v{entry['installed_translation_version']})"
+        writable = "scrivibile" if entry.get("writable") else "NON modificabile (protetta)"
+        if not entry.get("lua_ready"):
+            writable += " · dati non scaricati: avvia il gioco una volta"
+        print(f"  {i}. [{labels.get(entry['source'], entry['source'])}] {entry['path']}")
+        print(f"     build {entry.get('update') or '?'} · traduzione: {tr_txt} · {writable}")
+    return 0
+
+
 def cmd_check(args: argparse.Namespace) -> int:
     if not args.no_update_check:
         check_for_updates()
@@ -2910,6 +3055,8 @@ def main() -> int:
     common.add_argument("--no-update-check", action="store_true", help="Skip GitHub update check")
     check = sub.add_parser("check", parents=[common], help="Check compatibility")
     check.set_defaults(func=cmd_check)
+    listing = sub.add_parser("list", help="List all detected Aniimo installations")
+    listing.set_defaults(func=cmd_list)
     install = sub.add_parser("install", parents=[common], help="Install Italian translation")
     install.add_argument("--target", default="en", choices=["en"], help="Language slot used by the Italian translation")
     install.add_argument("--also-english", action="store_true", help=argparse.SUPPRESS)

@@ -1,6 +1,6 @@
 # Aniimo — Traduzione italiana
 
-## Release client Steam — v0.4.5 (fork autonoma con audit + Centro di controllo grafico)
+## Release client Steam — v0.4.6 (multi-installazione)
 
 > **Fork indipendente** della traduzione originale di [Sici29](https://github.com/Sici29/Aniimo-Italian-Translation) (MIT), mantenuta da [notorious-pizza](https://github.com/notorious-pizza): aggiornamenti, release e manutenzione **solo da questa repo**.
 > Questa fork ha superato un **audit indipendente di fedeltà** sulla build Steam `3544783` (copertura 112.187/112.187 chiavi, pairing SHA-256 perfetto, 0 errori di significato nel campione di 324 coppie) e applica 3 allineamenti terminologici. Report completo: [`AUDIT_FIDELITA_v0.4.2.md`](AUDIT_FIDELITA_v0.4.2.md).
@@ -17,6 +17,7 @@ Dalla pagina [Release](https://github.com/notorious-pizza/Aniimo-Italian-Transla
 Avvia **`Aniimo-Centro-Controllo.exe`** (dalle Release) oppure `Avvia_Traduzione_GUI.bat` / `python tools/aniimo_it_gui.py` se usi la repo: interfaccia pastello con mascotte animata, musichetta chiptune (disattivabile) e tutto a portata di pulsante —
 
 - **Stato a colpo d'occhio**: gioco rilevato e build, traduzione installata (versione e % di corrispondenza), **allineamento con la patch corrente** (e quante eventuali stringhe nuove restano in inglese), novità di traduzione da GitHub.
+- **Multi-installazione**: se hai più copie di Aniimo (Steam, launcher, MS Store), compaiono come chip selezionabili — tutto il resto della finestra riguarda la copia scelta, e «✦✦ Applica a TUTTE» traduce ogni copia patchabile in un colpo solo. La versione Microsoft Store è visibile ma protetta (UWP): non è patchabile.
 - **Azioni**: applica la traduzione, ripristina il backup, scegli/apri la cartella del gioco, apri le release — con conferme, avviso se il gioco è in esecuzione e registro attività in streaming.
 
 [☕ **Sostieni la traduzione originale di Sici29**](https://buymeacoffee.com/sici29)

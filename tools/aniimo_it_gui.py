@@ -2,9 +2,10 @@
 """Aniimo — Traduzione Italiana · Centro di controllo grafico.
 
 Interfaccia amichevole (Tkinter, solo standard library) per:
-- vedere se la traduzione è allineata alla patch di Aniimo installata;
+- vedere tutte le installazioni di Aniimo (Steam, launcher, MS Store) e sceglierle;
+- vedere se la traduzione è allineata alla patch installata;
 - vedere se la traduzione è già applicata e con quale versione;
-- applicare la traduzione o ripristinare il backup con un clic;
+- applicare la traduzione (alla selezione o a tutte) o ripristinare il backup;
 - controllare le novità su GitHub.
 
 Riusa le stesse funzioni testate dell'installer CLI (tools/aniimo_it_installer.py).
@@ -54,6 +55,9 @@ W = 800  # larghezza logica fissa; l'altezza è calcolata dalle metriche
 
 GUI_SETTINGS = inst.USER_WORK_DIR / "gui_settings.json"
 THEME_WAV = inst.USER_WORK_DIR / "theme.wav"
+
+SOURCE_LABELS = {"steam": "Steam", "standalone": "Launcher",
+                 "msstore": "MS Store", "manuale": "Manuale"}
 
 # --------------------------------------------------------------------------
 # Palette pastello
@@ -248,7 +252,6 @@ class RoundButton:
                                      min(14.0, h / 2 - 2), fill=color, outline=dark, width=2)
         self.txt = cv.create_text(x, y, text=label, fill="white",
                                   font=m.btn if big else m.btn_s)
-        self.bbox = (x - w / 2, y - h / 2, x + w / 2, y + h / 2)
         for item in (self.body, self.txt):
             cv.tag_bind(item, "<Button-1>", self._click)
             cv.tag_bind(item, "<Enter>", self._hover)
@@ -317,7 +320,12 @@ class App:
         self.smoke = smoke
         self.q: "queue.Queue[tuple]" = queue.Queue()
         self.busy = False
-        self.status: dict | None = None
+        self.payload: dict | None = None
+        self.installs: list[dict] = []
+        self.selected: dict | None = None
+        self.manifest = inst.local_manifest()
+        self.chip_items: list[int] = []
+        self.pill_items: list[int] = []
         self.music_on = bool(load_gui_settings().get("music_on", True))
         self.t0 = time.time()
         self.blink_at = time.time() + 3.0
@@ -353,10 +361,9 @@ class App:
             pass
 
         # log in stile console, incorporato nel canvas
-        log_pad = 10
         self.log = tk.Text(self.root, bg=LOG_BG, fg="#EDE6F7", relief="flat",
                            font=("Consolas", 9), wrap="word", state="disabled",
-                           padx=log_pad, pady=4, highlightthickness=0)
+                           padx=10, pady=4, highlightthickness=0)
         log_h = self.log_bottom - self.log_top - self.m.line(self.m.logt) - 8
         dense_round_rect(self.cv, self.margin, self.log_top, W - self.margin, self.log_bottom,
                          14, fill=LOG_BG, outline="#241D33", width=2)
@@ -369,8 +376,7 @@ class App:
         self.log.configure(state="normal")
         for line in (
             "Benvenuto nel Centro di controllo ✦",
-            "Nel gioco seleziona la lingua: Inglese.",
-            "Applica la traduzione, ripristina il backup o aggiorna lo stato da qui.",
+            "Rilevo le installazioni di Aniimo (può richiedere qualche secondo)…",
         ):
             self.log.insert("end", line + "\n")
         self.log.configure(state="disabled")
@@ -383,16 +389,6 @@ class App:
         root.protocol("WM_DELETE_WINDOW", self._on_close)
         if not defer_status:
             self.refresh_status()
-
-    def _on_close(self) -> None:
-        for attr in ("_tick_job", "_poll_job"):
-            job = getattr(self, attr, None)
-            if job:
-                try:
-                    self.root.after_cancel(job)
-                except Exception:
-                    pass
-        self.root.destroy()
         if self.music_on and not smoke:
             # la prima sintesi del tema può richiedere qualche secondo: fuori dal thread UI
             threading.Thread(target=self._start_music, daemon=True).start()
@@ -405,6 +401,16 @@ class App:
                                winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_LOOP)
         except Exception:
             self.music_on = False
+
+    def _on_close(self) -> None:
+        for attr in ("_tick_job", "_poll_job"):
+            job = getattr(self, attr, None)
+            if job:
+                try:
+                    self.root.after_cancel(job)
+                except Exception:
+                    pass
+        self.root.destroy()
 
     # ------------------------------------------------------------------ UI
     def _build_layout(self) -> None:
@@ -421,7 +427,7 @@ class App:
         dense_round_rect(cv, mg, y, W - mg, y + header_h, 16,
                          fill=CARD, outline="#EFE6DC", width=2)
         text_x = 176
-        btn_zone = 108  # spazio riservato ai due pulsanti in alto a destra
+        btn_zone = 108
         avail = W - mg - btn_zone - text_x - 12
         cv.create_text(text_x, y + pad, text="Traduzione Italiana", anchor="nw", font=m.huge, fill=INK)
         cv.create_text(text_x, y + pad + m.line(m.huge) + 4,
@@ -431,7 +437,6 @@ class App:
         cv.create_text(text_x, y + pad + m.line(m.huge) + 4 + m.line(m.sub) + 3,
                        text="Nel gioco seleziona: Inglese",
                        anchor="nw", font=m.ital, fill=CORAL_DARK)
-        # pulsanti Musica / GitHub in alto a destra, dentro l'header
         bw = 100
         bhh = m.line(m.btn_s) + 16
         bx = W - mg - 14 - bw / 2
@@ -456,10 +461,16 @@ class App:
         self._reserve(mg, y, W - mg, y + hero_h, "hero")
         y += hero_h + gap
 
+        # --- striscia selettore installazioni -------------------------------
+        self.strip_h = m.line(m.btn_s) + 20
+        self.strip_y = y
+        self._reserve(mg, y, W - mg, y + self.strip_h, "selector")
+        y += self.strip_h + gap
+
         # --- card di stato ---------------------------------------------------
         ch = m.line(m.card_t) + 2 + m.line(m.card_v) + 4 + m.line(m.card_s) + 2 * pad + 4
         cw = (W - 2 * mg - gap) / 2
-        self.card_game = Card(cv, mg, y, mg + cw, y + ch, "◆", "Gioco rilevato", m)
+        self.card_game = Card(cv, mg, y, mg + cw, y + ch, "◆", "Installazione", m)
         self.card_tr = Card(cv, mg + cw + gap, y, W - mg, y + ch, "✦", "Traduzione", m)
         self.card_align = Card(cv, mg, y + ch + gap, mg + cw, y + 2 * ch + gap, "⬡",
                                "Allineamento patch", m)
@@ -468,7 +479,7 @@ class App:
         self._reserve(mg, y, W - mg, y + 2 * ch + gap, "card")
         y += 2 * ch + gap + gap
 
-        # --- pulsanti --------------------------------------------------------
+        # --- pulsanti principali ---------------------------------------------
         bh = m.line(m.btn) + 22
         big = [
             ("↻  Aggiorna stato", MINT, MINT_DARK, None),
@@ -494,29 +505,11 @@ class App:
         self.btn_restore.cmd = self.restore_backup
         y += bh + gap + gap
 
-        bhs = m.line(m.btn_s) + 18
-        small = [
-            ("▸  Apri cartella gioco", SUN, SUN_DARK, None),
-            ("◎  Scegli cartella…", SUN, SUN_DARK, None),
-            ("↓  Release su GitHub", SUN, SUN_DARK, None),
-        ]
-        widths = [max(120.0, m.btn_s.measure(lbl) + 30) for lbl, *_ in small]
-        total = sum(widths) + 16 * 2
-        if total > budget:
-            k = budget / total
-            widths = [w * k for w in widths]
-        x = mg + (budget - total) / 2
-        made = []
-        for (lbl, color, dark, _), w in zip(small, widths):
-            x += w / 2
-            made.append(RoundButton(cv, x, y + bhs / 2, w, bhs, lbl, color, dark, None, m, big=False))
-            self._reserve(x - w / 2, y, x + w / 2, y + bhs, f"btn:{lbl}")
-            x += w / 2 + 16
-        self.btn_folder, self.btn_pick, self.btn_releases = made
-        self.btn_folder.cmd = self.open_game_folder
-        self.btn_pick.cmd = self.choose_folder
-        self.btn_releases.cmd = self.open_releases
-        y += bhs + gap
+        # --- striscia azioni secondarie (dinamica) ---------------------------
+        self.sec_h = m.line(m.btn_s) + 18
+        self.sec_y = y
+        self._reserve(mg, y, W - mg, y + self.sec_h, "secondary")
+        y += self.sec_h + gap
 
         # --- log + footer (chiusura del flusso) ------------------------------
         log_lines = 6
@@ -674,7 +667,7 @@ class App:
         if self.busy:
             return
         self.busy = True
-        for b in (self.btn_refresh, self.btn_apply, self.btn_restore, self.btn_pick):
+        for b in (self.btn_refresh, self.btn_apply, self.btn_restore):
             b.set_enabled(False)
         self.cv.itemconfig(self.log_title, text=f"Registro attività · {label} in corso…")
         self._log_line(f"— {label} —")
@@ -698,7 +691,7 @@ class App:
 
     def _work_done(self, info: dict) -> None:
         self.busy = False
-        for b in (self.btn_refresh, self.btn_apply, self.btn_restore, self.btn_pick):
+        for b in (self.btn_refresh, self.btn_apply, self.btn_restore):
             b.set_enabled(True)
         self.cv.itemconfig(self.log_title, text="Registro attività")
         if info["err"]:
@@ -714,6 +707,8 @@ class App:
             self._log_line(f"! {info['label']} interrotto (codice {info['code']}). Leggi il registro.")
         if info["refresh"]:
             self.refresh_status()
+        else:
+            self._render_buttons()
 
     def _log_line(self, text: str) -> None:
         self.q.put(("log", text))
@@ -722,14 +717,29 @@ class App:
     def refresh_status(self) -> None:
         if self.busy:
             return
-        self.card_game.set("Rilevo il gioco…", "un attimo ✧", SKY)
+        self.card_game.set("Rilevo le installazioni…", "un attimo ✧", SKY)
 
         def job() -> int:
-            status = inst.collect_startup_status()
-            self.q.put(("status", status))
+            installs = inst.list_game_installations()
+            saved = str(load_gui_settings().get("selected_game_dir") or "")
+            if saved:
+                sp = Path(saved)
+                try:
+                    ok_saved = sp.is_dir() and inst.looks_like_game_dir(sp) and not any(
+                        e["path"].resolve() == sp.resolve() for e in installs)
+                except OSError:
+                    ok_saved = False
+                if ok_saved:
+                    installs.append(inst.describe_installation(sp, source="manuale"))
+            payload = {
+                "installs": installs,
+                "running": inst.process_running(),
+                "update": inst.check_for_updates(silent=True),
+            }
+            self.q.put(("status", payload))
             return 0
 
-        self._run_worker(job, "Rilevamento stato", refresh_after=False)
+        self._run_worker(job, "Rilevamento installazioni", refresh_after=False)
 
     @staticmethod
     def short_path(text: str, keep: int = 46) -> str:
@@ -742,51 +752,202 @@ class App:
         self.cv.itemconfig(self.hero, fill=bg, outline=outline)
         self.cv.itemconfig(self.hero_text, text=text, fill=fg)
 
-    def _render_status(self, status: dict) -> None:
-        self.status = status
-        manifest = status.get("manifest", {})
-        game_dir = status.get("game_dir")
+    # ------------------------------------------------------------ selettore e pillole
+    def _draw_install_chips(self) -> None:
+        cv, m = self.cv, self.m
+        for item in self.chip_items:
+            cv.delete(item)
+        self.chip_items = []
+        if not self.installs:
+            return
+        y = self.strip_y + self.strip_h / 2
+        h = self.strip_h - 4
+        labels = []
+        for e in self.installs:
+            name = SOURCE_LABELS.get(e["source"], e["source"])
+            lbl = f"{name} · build {e.get('update') or '?'}"
+            if not e.get("writable"):
+                lbl = "✕ " + lbl
+            labels.append((lbl, e))
+        gap_px = 10
+        widths = [max(90.0, m.btn_s.measure(l) + 28) for l, _ in labels]
+        budget = W - 2 * self.margin
+        total = sum(widths) + gap_px * (len(labels) - 1)
+        if total > budget:  # restringi proporzionalmente e accorcia le etichette
+            k = (budget - gap_px * (len(labels) - 1)) / sum(widths)
+            widths = [w * k for w in widths]
+        x = self.margin + max(0.0, (budget - (sum(widths) + gap_px * (len(labels) - 1))) / 2)
+        for (lbl, e), w in zip(labels, widths):
+            x += w / 2
+            sel = e is self.selected
+            if not e.get("writable"):
+                fill, outline, fg = "#E8E4EE", "#C9C2D6", INK_SOFT
+            elif sel:
+                fill, outline, fg = MINT, MINT_DARK, "white"
+            else:
+                fill, outline, fg = CARD, "#E3D9CF", INK
+            body = dense_round_rect(cv, x - w / 2, y - h / 2, x + w / 2, y + h / 2,
+                                    min(12.0, h / 2 - 2), fill=fill, outline=outline, width=2)
+            txt = cv.create_text(x, y, text=m.fit(lbl, m.btn_s, w - 14), fill=fg, font=m.btn_s)
+            self.chip_items += [body, txt]
+            for it in (body, txt):
+                cv.tag_bind(it, "<Button-1>", lambda _ev, entry=e: self.select_install(entry))
+            x += w / 2 + gap_px
+
+    def _draw_secondary_pills(self) -> None:
+        cv, m = self.cv, self.m
+        for item in self.pill_items:
+            cv.delete(item)
+        self.pill_items = []
+        y = self.sec_y + self.sec_h / 2
+        h = self.sec_h - 4
+        patchable = [e for e in self.installs
+                     if e.get("writable") and e.get("lua_ready")]
+        pills: list[tuple[str, str, str, object]] = []
+        if len(patchable) >= 2:
+            pills.append(("✦✦  Applica a TUTTE le installazioni", CORAL, CORAL_DARK,
+                          self.apply_to_all))
+        pills.append(("▸  Apri cartella gioco", SUN, SUN_DARK, self.open_game_folder))
+        pills.append(("◎  Scegli cartella…", SUN, SUN_DARK, self.choose_folder))
+        pills.append(("↓  Release su GitHub", SUN, SUN_DARK, self.open_releases))
+        gap_px = 10
+        widths = [max(110.0, m.btn_s.measure(l) + 28) for l, *_ in pills]
+        budget = W - 2 * self.margin
+        total = sum(widths) + gap_px * (len(pills) - 1)
+        if total > budget:
+            k = (budget - gap_px * (len(pills) - 1)) / sum(widths)
+            widths = [w * k for w in widths]
+        x = self.margin + max(0.0, (budget - (sum(widths) + gap_px * (len(pills) - 1))) / 2)
+        for (lbl, color, dark, cmd), w in zip(pills, widths):
+            x += w / 2
+            dim = cmd is self.apply_to_all and self.busy
+            body = dense_round_rect(cv, x - w / 2, y - h / 2, x + w / 2, y + h / 2,
+                                    min(12.0, h / 2 - 2),
+                                    fill="#DDD6E4" if dim else color,
+                                    outline="#B9B1C6" if dim else dark, width=2)
+            txt = cv.create_text(x, y, text=m.fit(lbl, m.btn_s, w - 14),
+                                 fill="#F4F1F8" if dim else "white", font=m.btn_s)
+            self.pill_items += [body, txt]
+            for it in (body, txt):
+                cv.tag_bind(it, "<Button-1>", lambda _ev, c=cmd: self._pill_click(c))
+            x += w / 2 + gap_px
+
+    def _pill_click(self, cmd) -> None:
+        if self.busy:
+            return
+        if cmd:
+            cmd()
+
+    def select_install(self, entry: dict) -> None:
+        if self.busy or entry is self.selected:
+            return
+        self.selected = entry
+        settings = load_gui_settings()
+        settings["selected_game_dir"] = str(entry["path"])
+        save_gui_settings(settings)
+        if self.payload:
+            self._render_status(self.payload)
+
+    # ------------------------------------------------------------ rendering stato
+    def _render_status(self, payload: dict) -> None:
+        self.payload = payload
+        self.installs = payload.get("installs") or []
+        settings = load_gui_settings()
+        saved = str(settings.get("selected_game_dir") or "")
+        self.selected = None
+        for e in self.installs:
+            if str(e["path"]) == saved:
+                self.selected = e
+                break
+        if self.selected is None and self.installs:
+            self.selected = self.installs[0]
+        self._draw_install_chips()
+        self._render_selected()
+        self._draw_secondary_pills()
+
+    def _render_buttons(self) -> None:
+        sel = self.selected
+        ok = bool(sel) and sel.get("writable") and sel.get("lua_ready")
+        self.btn_apply.set_enabled(ok and not self.busy)
+        self.btn_restore.set_enabled(ok and not self.busy)
+        self.btn_refresh.set_enabled(not self.busy)
+        self._draw_secondary_pills()
+
+    def _render_selected(self) -> None:
         m = self.m
-
-        running_names = inst.process_running() if game_dir else []
+        sel = self.selected
+        running_names = self.payload.get("running") or [] if self.payload else []
         running = bool(running_names)
-        if not game_dir:
-            self.card_game.set("Gioco non trovato", "usa «Scegli cartella…»", CORAL)
-        elif running:
-            upd = status.get("detected_game_update") or "?"
-            self.card_game.set(f"Build {upd}", f"⚠ in esecuzione: {', '.join(running_names)}", SUN)
-        else:
-            upd = status.get("detected_game_update") or "?"
-            self.card_game.set(f"Build {upd}", App.short_path(str(game_dir)), MINT)
+        upd_info = (self.payload or {}).get("update") or {}
+        supported = [str(v) for v in (self.manifest.get("supported_game_updates") or [])]
 
-        tr = status.get("translation_installed")
-        if tr is True:
-            ver = status.get("installed_translation_version") or "?"
-            ratio = status.get("translation_match_ratio")
-            pct = f" · {ratio * 100:.0f}%" if isinstance(ratio, (int, float)) else ""
-            self.card_tr.set(f"✓ Installata (v{ver})",
-                             f"slot {status.get('translation_slot') or 'en'}{pct} corrisponde", MINT)
-        elif tr is False:
-            self.card_tr.set("Non installata", "pronta all'uso ✦", CORAL)
+        if not self.installs:
+            self.card_game.set("Nessuna installazione", "usa «Scegli cartella…»", CORAL)
+            self.card_tr.set("—", "", SUN)
+            self.card_align.set("—", "", SUN)
+            self._set_hero("Nessuna installazione di Aniimo trovata — usa «Scegli cartella…»", HERO_BAD)
+        elif sel is None:
+            self._set_hero("Seleziona un'installazione dalla striscia sopra", HERO_WARN)
         else:
-            self.card_tr.set("Stato incerto", "archivio non leggibile", SUN)
+            source = SOURCE_LABELS.get(sel["source"], sel["source"])
+            upd = sel.get("update") or "?"
+            if running:
+                self.card_game.set(f"{source} · build {upd}",
+                                   f"⚠ in esecuzione: {', '.join(running_names)}", SUN)
+            else:
+                self.card_game.set(f"{source} · build {upd}",
+                                   App.short_path(str(sel["path"])),
+                                   MINT if sel.get("writable") else SUN)
 
-        supported = [str(v) for v in (manifest.get("supported_game_updates") or [])]
-        upd = status.get("detected_game_update")
-        unknown = status.get("unknown_text_count")
-        aligned = bool(upd) and str(upd) in supported
-        if not game_dir:
-            self.card_align.set("—", "gioco non rilevato", SUN)
-        elif unknown:
-            self.card_align.set(f"⚠ {unknown} stringhe nuove", "restano in inglese (fallback)", CORAL)
-        elif aligned:
-            self.card_align.set("✓ Allineata alla patch", f"build {upd} supportata e verificata", MINT)
-        elif status.get("text_resources_supported") is True:
-            self.card_align.set("✓ Compatibile per contenuto", f"build {upd} non testata, testi identici", MINT)
-        else:
-            self.card_align.set("Da verificare", f"build {upd} non in lista", SUN)
+            tr = sel.get("translation_installed")
+            if tr is True:
+                ver = sel.get("installed_translation_version") or "?"
+                ratio = sel.get("translation_match_ratio")
+                pct = f" · {ratio * 100:.0f}%" if isinstance(ratio, (int, float)) else ""
+                self.card_tr.set(f"✓ Installata (v{ver})",
+                                 f"slot {sel.get('translation_slot') or 'en'}{pct} corrisponde", MINT)
+            elif tr is False:
+                self.card_tr.set("Non installata", "pronta all'uso ✦", CORAL)
+            else:
+                self.card_tr.set("Stato incerto", "archivio non leggibile", SUN)
 
-        upd_info = status.get("update") or {}
+            unknown = sel.get("unknown_text_count")
+            aligned = bool(upd != "?" and str(upd) in supported)
+            if not sel.get("lua_ready"):
+                self.card_align.set("Dati non scaricati", "avvia questa copia del gioco una volta", SUN)
+            elif unknown:
+                self.card_align.set(f"⚠ {unknown} stringhe nuove", "restano in inglese (fallback)", CORAL)
+            elif aligned:
+                self.card_align.set("✓ Allineata alla patch", f"build {upd} supportata e verificata", MINT)
+            elif sel.get("texts_supported") is True:
+                self.card_align.set("✓ Compatibile per contenuto", f"build {upd} non testata, testi identici", MINT)
+            else:
+                self.card_align.set("Da verificare", f"build {upd} non in lista", SUN)
+
+            # hero per l'installazione selezionata
+            if not sel.get("writable"):
+                self._set_hero("Versione Microsoft Store protetta (cartelle UWP): "
+                               "la traduzione non può essere applicata a questa copia", HERO_BAD)
+            elif not sel.get("lua_ready"):
+                self._set_hero("Questa copia non ha ancora scaricato i dati del gioco: "
+                               "avviala una volta, poi applica la traduzione", HERO_WARN)
+            elif running:
+                self._set_hero("⚠ Aniimo è in esecuzione — chiudilo prima di applicare o ripristinare", HERO_WARN)
+            elif unknown:
+                self._set_hero(f"⚠ {unknown} stringhe nuove restano in inglese: "
+                               f"serve un aggiornamento della traduzione", HERO_BAD)
+            elif tr is False:
+                self._set_hero(f"Traduzione pronta su {source} — premi «✦ Applica traduzione»", HERO_WARN)
+            elif tr is True and (aligned or sel.get("texts_supported") is True):
+                if upd_info.get("update_available"):
+                    self._set_hero(f"✓ Tutto pronto · novità v{upd_info.get('latest')} su GitHub", HERO_WARN)
+                else:
+                    self._set_hero(f"✓ Tutto pronto su {source} — traduzione installata "
+                                   f"e allineata alla build {upd}", HERO_OK)
+            else:
+                self._set_hero("Stato traduzione incerto — consulta il registro sotto", HERO_WARN)
+
+        # card novità (globale)
         cur = upd_info.get("current", "?")
         checked = f" · controllo {upd_info['checked_at']}" if upd_info.get("checked_at") else ""
         if upd_info.get("error"):
@@ -802,69 +963,114 @@ class App:
         else:
             self.card_news.set("✓ Traduzione aggiornata", f"versione corrente v{cur}{checked}", MINT)
 
-        # banner di sintesi
-        if not game_dir:
-            self._set_hero("Gioco non trovato — usa «Scegli cartella…»", HERO_BAD)
-        elif running:
-            self._set_hero("⚠ Aniimo è in esecuzione — chiudilo prima di applicare o ripristinare", HERO_WARN)
-        elif unknown:
-            self._set_hero(f"⚠ {unknown} stringhe nuove restano in inglese: "
-                           f"serve un aggiornamento della traduzione", HERO_BAD)
-        elif tr is False:
-            self._set_hero("Traduzione pronta — premi «✦ Applica traduzione»", HERO_WARN)
-        elif tr is True and (aligned or status.get("text_resources_supported") is True):
-            if upd_info.get("update_available"):
-                self._set_hero(f"✓ Tutto pronto · novità v{upd_info.get('latest')} su GitHub", HERO_WARN)
-            else:
-                self._set_hero(f"✓ Tutto pronto — traduzione installata e allineata alla build {upd}", HERO_OK)
-        else:
-            self._set_hero("Stato traduzione incerto — consulta il registro sotto", HERO_WARN)
-
         self.cv.itemconfig(self.footer, text=m.fit(
-            f"installer v{manifest.get('translation_version', '?')} · build supportate: "
+            f"installer v{self.manifest.get('translation_version', '?')} · build supportate: "
             f"{', '.join(supported) or '—'} · backup: Documenti\\AniimoItalianTranslation",
             m.foot, W - 2 * self.margin))
+        self._render_buttons()
 
     # ------------------------------------------------------------ azioni
+    def _selected_ok(self) -> bool:
+        sel = self.selected
+        if not sel or not sel.get("writable") or not sel.get("lua_ready"):
+            messagebox.showinfo(APP_TITLE,
+                                "Questa installazione non è al momento patchabile:\n"
+                                "se è del Microsoft Store le cartelle sono protette, altrimenti\n"
+                                "avvia quella copia del gioco una volta per scaricare i dati.")
+            return False
+        return True
+
     def apply_translation(self) -> None:
+        if self.busy or not self._selected_ok():
+            return
         running = inst.process_running()
         warn = "Verrà creato un backup automatico e poi applicata la traduzione italiana.\n\n"
+        warn += f"Installazione: {self.selected['path']}\n\n"
         if running:
             warn += "⚠ Il gioco/launcher risulta in esecuzione: chiudilo prima di continuare.\n\n"
         warn += ("Traduzione non ufficiale: modifica file locali del client. Nessuna garanzia "
                  "contro controlli d'integrità o sanzioni sull'account (anti-cheat NetEase).")
         if not messagebox.askokcancel("Applica traduzione", warn, icon="warning"):
             return
-        args = Namespace(game_dir=None, no_update_check=True, ignore_update=True,
-                         force=False, force_open=False, also_english=False, target="en")
+        args = Namespace(game_dir=str(self.selected["path"]), no_update_check=True,
+                         ignore_update=True, force=False, force_open=False,
+                         also_english=False, target="en")
         self._run_worker(lambda: inst.cmd_install(args), "Installazione traduzione",
                          celebrate_on_success=True,
                          info_on_success="Traduzione applicata!\n\nNel gioco seleziona la lingua: Inglese.")
 
-    def restore_backup(self) -> None:
-        if not messagebox.askyesno("Ripristina backup",
-                                   "Riporto gli archivi del gioco all'ultimo backup\n(traduzione rimossa)?"):
+    def apply_to_all(self) -> None:
+        if self.busy:
             return
-        args = Namespace(game_dir=None, force_open=False)
+        targets = [e for e in self.installs if e.get("writable") and e.get("lua_ready")]
+        if len(targets) < 2:
+            messagebox.showinfo(APP_TITLE, "Serve più di un'installazione patchabile.")
+            return
+        running = inst.process_running()
+        warn = (f"Applicherò la traduzione a {len(targets)} installazioni in sequenza:\n\n"
+                + "\n".join(f"· {e['path']}" for e in targets)
+                + "\n\nBackup automatico per ciascuna.")
+        if running:
+            warn += "\n\n⚠ Il gioco/launcher risulta in esecuzione: chiudilo prima di continuare."
+        warn += ("\n\nTraduzione non ufficiale: nessuna garanzia contro controlli d'integrità "
+                 "o sanzioni sull'account (anti-cheat NetEase).")
+        if not messagebox.askokcancel("Applica a tutte", warn, icon="warning"):
+            return
+
+        def job() -> int:
+            codes = []
+            for i, e in enumerate(targets, 1):
+                print(f"[{i}/{len(targets)}] {e['path']}")
+                args = Namespace(game_dir=str(e["path"]), no_update_check=True,
+                                 ignore_update=True, force=False, force_open=False,
+                                 also_english=False, target="en")
+                try:
+                    codes.append(inst.cmd_install(args))
+                except Exception as exc:  # noqa: BLE001 - continua con le altre
+                    print(f"✗ Errore su {e['path']}: {exc}")
+                    codes.append(1)
+            return 0 if all(c == 0 for c in codes) else max(codes)
+
+        self._run_worker(job, "Installazione su tutte le installazioni",
+                         celebrate_on_success=True,
+                         info_on_success=f"Traduzione applicata a {len(targets)} installazioni!\n\n"
+                                         "Nel gioco seleziona la lingua: Inglese.")
+
+    def restore_backup(self) -> None:
+        if self.busy or not self._selected_ok():
+            return
+        if not messagebox.askyesno("Ripristina backup",
+                                   f"Riporto gli archivi di\n{self.selected['path']}\n"
+                                   "all'ultimo backup (traduzione rimossa)?"):
+            return
+        args = Namespace(game_dir=str(self.selected["path"]), force_open=False)
         self._run_worker(lambda: inst.cmd_restore(args), "Ripristino backup",
                          celebrate_on_success=True,
                          info_on_success="Backup ripristinato: il gioco è tornato in inglese originale.")
 
     def open_game_folder(self) -> None:
-        game_dir = (self.status or {}).get("game_dir")
-        if not game_dir:
-            messagebox.showinfo(APP_TITLE,
-                                "Gioco non ancora rilevato:\npremi «Aggiorna stato» o scegli la cartella.")
+        sel = self.selected
+        if not sel:
+            messagebox.showinfo(APP_TITLE, "Nessuna installazione selezionata.")
             return
         import webbrowser  # noqa: PLC0415
-        webbrowser.open(game_dir.as_uri())
+        webbrowser.open(Path(sel["path"]).as_uri())
 
     def choose_folder(self) -> None:
+        if self.busy:
+            return
         folder = filedialog.askdirectory(title="Scegli la cartella di Aniimo (contiene Aniimo.exe)")
-        if folder:
+        if not folder:
+            return
+        settings = load_gui_settings()
+        settings["selected_game_dir"] = folder
+        save_gui_settings(settings)
+        try:
             inst.save_game_dir(Path(folder))
-            self._log_line(f"Cartella impostata: {folder}")
-            self.refresh_status()
+        except Exception:  # noqa: BLE001
+            pass
+        self._log_line(f"Cartella impostata: {folder} — rieseguo il rilevamento…")
+        self.refresh_status()
 
     def open_github(self) -> None:
         import webbrowser  # noqa: PLC0415
@@ -872,7 +1078,7 @@ class App:
 
     def open_releases(self) -> None:
         import webbrowser  # noqa: PLC0415
-        webbrowser.open(((self.status or {}).get("update") or {}).get("releases_url")
+        webbrowser.open(((self.payload or {}).get("update") or {}).get("releases_url")
                         or "https://github.com/notorious-pizza/Aniimo-Italian-Translation/releases")
 
     # ------------------------------------------------------------ musica & festa
@@ -970,7 +1176,7 @@ def main() -> int:
 
     if foto:
         def scatta() -> None:
-            time.sleep(4.0)
+            time.sleep(12.0)  # lascia completare il rilevamento installazioni
             for _ in range(30):
                 root.update()
                 time.sleep(0.1)
