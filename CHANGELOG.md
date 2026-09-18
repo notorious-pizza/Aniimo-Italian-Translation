@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.10 - 2026-09-18
+
+- **Supporto alla build 3551601**: NetEase ha aggiornato il client Steam (3544783 → 3551601) ribundlando le risorse: **testi ufficiali invariati** (0 stringhe nuove/modificate su 112.187, verificato per contenuto) ma bundle font con nuovi hash. La build è aggiunta alle supportate.
+- **Nuova politica font**: i bundle presenti ma non in whitelist (build che ribundla le risorse) non bloccano più l'installazione — il testo è verificato a parte e i font non vengono toccati — ma generano un avviso esplicito: «dopo l'installazione controlla in gioco le lettere accentate». Il blocco duro resta per i download incompleti (nessun bundle presente). La GUI mostra lo stato in card e banner.
+- Nota comportamentale: **gli update del gioco riportano l'inglese** (l'hot-update riscarica l'archivio lua sovrascrivendo la traduzione): dopo ogni patch basta riapplicare — un clic dalla GUI.
+
 ## 0.4.9 - 2026-09-18
 
 - **Diagnosi chiara per i download incompleti**: quando una copia di Aniimo non ha finito di scaricare le risorse (bundle font nativi assenti), l'installazione non si blocca più con l'ambiguo «Risorse native cambiate» ma spiega «Download del gioco non completo: avvia il gioco e lascia finire lo scaricamento». La GUI lo mostra in anticipo nella card Allineamento e nel banner, e il pulsante Applica dà lo stesso suggerimento. «Risorse native cambiate» resta solo per build realmente diverse (risorse presenti ma non riconosciute).

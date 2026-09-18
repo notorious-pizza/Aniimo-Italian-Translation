@@ -711,9 +711,8 @@ def describe_installation(game_dir: Path, source: str | None = None) -> dict:
     except Exception:  # noqa: BLE001 - un archivio illeggibile non blocca le altre
         entry["translation_installed"] = None
     try:
-        entry["resources_issue"] = (
-            technical_compatibility_status(resolve_paths(game_dir)).get("issues") or [None]
-        )[0]
+        tech = technical_compatibility_status(resolve_paths(game_dir))
+        entry["resources_issue"] = (tech.get("issues") or tech.get("warnings") or [None])[0]
     except Exception:  # noqa: BLE001
         entry["resources_issue"] = None
     return entry
@@ -1980,16 +1979,26 @@ def patch_font_bundle(source: Path, destination: Path) -> dict:
     }
 
 
+def _overlay_has_any_bundle(game_dir: Path) -> bool:
+    """True se l'area bundle esiste e contiene risorse (download completato)."""
+    for rel in FONT_CACHE_RELS:
+        cache = game_dir / rel
+        if cache.is_dir() and any(cache.rglob("*.uab")):
+            return True
+    return False
+
+
 def technical_compatibility_status(paths: GamePaths) -> dict:
     """Verify that font, date and countdown resources are known and patchable."""
     if final_text_profile():
-        issues = []
+        issues: list[str] = []
+        warnings: list[str] = []
+        font_verified = False
         bundles = local_manifest().get("native_font_bundles", [])
         if not bundles:
             issues.append("native_font_manifest")
         else:
             found_match = False
-            found_any_file = False
             for bundle in bundles:
                 relative = Path(bundle["relative"])
                 if relative.is_absolute() or ".." in relative.parts:
@@ -2008,17 +2017,22 @@ def technical_compatibility_status(paths: GamePaths) -> dict:
                             matches = list(steam_dir.glob(f"*_{digest}.uab"))
                             if matches:
                                 candidate = matches[0]
-                if candidate.is_file():
-                    found_any_file = True
-                    if sha256_file(candidate) == bundle["sha256"]:
-                        found_match = True
-                        break
-            if not found_match:
-                # bundle assenti = download del gioco non completato;
-                # bundle presenti ma diversi = build non ancora verificata
-                issues.append("native_font_missing" if not found_any_file
-                              else "native_font_changed")
-        return {"supported": not issues, "issues": issues,
+                if candidate.is_file() and sha256_file(candidate) == bundle["sha256"]:
+                    found_match = True
+                    break
+            if found_match:
+                font_verified = True
+            elif _overlay_has_any_bundle(paths.game_dir):
+                # Bundle presenti ma con hash sconosciuti (build nuova che ha
+                # ribundlato le risorse): noi non tocchiamo i font nel profilo
+                # finale e il testo è verificato a parte — si applica con avviso,
+                # controllo visivo degli accenti in gioco consigliato.
+                warnings.append("native_font_unverified")
+            else:
+                # Nessuna risorsa: il download del gioco non è completo.
+                issues.append("native_font_missing")
+        return {"supported": not issues, "issues": issues, "warnings": warnings,
+                "font_verified": font_verified,
                 "date_italian": False, "countdown_italian": False,
                 "font_accented": not issues, "font_validation": "static_glyph_coverage",
                 "runtime_validation": "pending"}
@@ -2293,6 +2307,10 @@ def build_patch(paths: GamePaths, target_langs: list[str], force: bool) -> tuple
                     "Avvia il gioco (o il launcher) e lascia finire il download, poi riprova."
                 )
             raise RuntimeError("Risorse native cambiate: questa build richiede una nuova verifica.")
+        if "native_font_unverified" in tech.get("warnings", []):
+            print("Avviso: i bundle font di questa build non sono nella lista verificata.")
+            print("Il testo è comunque compatibile al 100%; dopo l'installazione controlla")
+            print("in gioco che le lettere accentate (à è é ì ò ù) appaiano correttamente.")
     patch_dir = USER_WORK_DIR / "patches" / time.strftime("%Y%m%d-%H%M%S")
     replacements: dict[str, bytes] = {}
     stats: dict[str, object] = {
@@ -2508,6 +2526,9 @@ def cmd_check(args: argparse.Namespace) -> int:
     print("Strutture tecniche:", "compatibili" if technical["supported"] else "da aggiornare")
     if technical["issues"]:
         print("Componenti da verificare:", ", ".join(technical["issues"]))
+    if "native_font_unverified" in technical.get("warnings", []):
+        print("Font di questa build non riverificati: dopo l'installazione controlla in gioco "
+              "le lettere accentate (à è é ì ò ù).")
     print("Versione supportata:", "sì" if status["supported"] and technical["supported"] else "no")
     return 0
 

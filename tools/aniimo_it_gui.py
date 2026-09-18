@@ -929,6 +929,9 @@ class App:
             elif res_issue == "native_font_missing":
                 self.card_align.set("⚠ Download incompleto",
                                     "avvia il gioco e lascia finire lo scaricamento", CORAL)
+            elif res_issue == "native_font_unverified":
+                self.card_align.set("⚠ Font da riverificare",
+                                    "dopo l'applicazione controlla gli accenti in gioco", SUN)
             elif res_issue == "native_font_changed":
                 self.card_align.set("⚠ Build da verificare",
                                     "risorse native non riconosciute", SUN)
@@ -951,6 +954,9 @@ class App:
             elif sel.get("resources_issue") == "native_font_missing":
                 self._set_hero("⚠ Download del gioco non completo su questa copia: "
                                "avviala e lascia finire lo scaricamento, poi riprova", HERO_BAD)
+            elif sel.get("resources_issue") == "native_font_unverified":
+                self._set_hero("Testo compatibile · font di questa build non ancora riverificati: "
+                               "applica e controlla in gioco le lettere accentate", HERO_WARN)
             elif sel.get("resources_issue") == "native_font_changed":
                 self._set_hero("⚠ Risorse native non riconosciute su questa copia: "
                                "serve una nuova verifica della build prima di applicare", HERO_WARN)
