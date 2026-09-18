@@ -724,6 +724,9 @@ class App:
 
         def job() -> int:
             installs = inst.list_game_installations()
+            print(f"Installazioni rilevate: {len(installs)}"
+                  + ("" if len(installs) >= 2 else
+                     " (se ne aspetti altre: premi ↻ Aggiorna stato o «Scegli cartella…»)"))
             saved = str(load_gui_settings().get("selected_game_dir") or "")
             if saved:
                 sp = Path(saved)

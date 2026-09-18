@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.8 - 2026-09-18
+
+- **Rilevamento installazioni irrobustito**: timeout PowerShell più larghi (8→15-20 s) e secondo tentativo automatico quando le sorgenti lente non rispondono (es. gioco a schermo intero che satura il sistema e faceva perdere copie dallo scan); il registro attività ora scrive quante installazioni sono state rilevate, con suggerimento se meno di due.
+
 ## 0.4.7 - 2026-09-18
 
 - **Auto-aggiornamento anche per il Centro di controllo (GUI)**: quando c'è una nuova release, compare la pillola «⬇ Aggiorna programma» — scarica l'asset giusto da GitHub con verifica SHA-256, chiude la finestra, sostituisce l'EXE e riapre la versione nuova da sola (stesso meccanismo collaudato dell'installer CLI; l'asset è scelto in base all'EXE in esecuzione, senza sostituzioni incrociate tra GUI e installer).

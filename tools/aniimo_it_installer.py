@@ -495,7 +495,7 @@ def parse_steam_libraries() -> list[Path]:
             ),
         ]
         output = subprocess.check_output(cmd, text=True, stderr=subprocess.DEVNULL,
-                                         timeout=8, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                                         timeout=20, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     except Exception:
         output = ""
     for line in output.splitlines():
@@ -604,7 +604,7 @@ def shortcut_aniimo_dirs() -> list[Path]:
     )
     try:
         output = subprocess.check_output(["powershell", "-NoProfile", "-Command", script],
-                                         text=True, stderr=subprocess.DEVNULL, timeout=8,
+                                         text=True, stderr=subprocess.DEVNULL, timeout=15,
                                          creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         return list(dict.fromkeys(Path(line.strip()).parent for line in output.splitlines() if line.strip()))
     except (OSError, subprocess.SubprocessError):
@@ -713,12 +713,7 @@ def describe_installation(game_dir: Path, source: str | None = None) -> dict:
     return entry
 
 
-def list_game_installations() -> list[dict]:
-    """Tutte le installazioni ANIIMO trovate, con sorgente, build e stato traduzione.
-
-    Le cartelle Microsoft Store (WindowsApps) risultano writable=False: le ACL
-    UWP le rendono non patchabili senza appropriarsi delle cartelle di sistema.
-    """
+def _enumerate_installations() -> list[dict]:
     candidates: list[Path] = []
     try:
         candidates.extend(candidate_game_dirs())
@@ -743,6 +738,28 @@ def list_game_installations() -> list[dict]:
         return int(upd) if upd and str(upd).isdigit() else 0
 
     results.sort(key=_build_key, reverse=True)
+    return results
+
+
+def list_game_installations() -> list[dict]:
+    """Tutte le installazioni ANIIMO trovate, con sorgente, build e stato traduzione.
+
+    Le cartelle Microsoft Store (WindowsApps) risultano writable=False: le ACL
+    UWP le rendono non patchabili senza appropriarsi delle cartelle di sistema.
+    Se le sorgenti lente (PowerShell) non rispondono — ad esempio con il gioco a
+    schermo intero che satura il sistema — si riprova una volta: meglio un
+    rilevamento più lento che uno incompleto.
+    """
+    results = _enumerate_installations()
+    try:
+        slow_sources_ok = bool(parse_steam_libraries()) or bool(shortcut_aniimo_dirs())
+    except Exception:  # noqa: BLE001
+        slow_sources_ok = True
+    if not slow_sources_ok:
+        time.sleep(1.5)
+        retry = _enumerate_installations()
+        if len(retry) > len(results):
+            results = retry
     return results
 
 
