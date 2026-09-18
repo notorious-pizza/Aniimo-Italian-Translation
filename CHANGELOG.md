@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.7 - 2026-09-18
+
+- **Auto-aggiornamento anche per il Centro di controllo (GUI)**: quando c'è una nuova release, compare la pillola «⬇ Aggiorna programma» — scarica l'asset giusto da GitHub con verifica SHA-256, chiude la finestra, sostituisce l'EXE e riapre la versione nuova da sola (stesso meccanismo collaudato dell'installer CLI; l'asset è scelto in base all'EXE in esecuzione, senza sostituzioni incrociate tra GUI e installer).
+- Fix: la cache del controllo aggiornamenti ora conserva l'asset (prima, su risultato in cache, l'auto-aggiornamento CLI poteva riportare «release senza installer»).
+- Pulizia dei download anche per gli EXE della GUI; rilancio senza console per l'EXE GUI dopo la sostituzione.
+- Testi della traduzione invariati.
+
 ## 0.4.6 - 2026-09-18
 
 - **Supporto multi-installazione**: il Centro di controllo rileva tutte le copie di Aniimo sul PC (Steam di ogni libreria, launcher Pawprint, Microsoft Store, cartelle manuali) e mostra una striscia di chip per sceglierle — card, banner e azioni agiscono sull'installazione selezionata, con selezione ricordata tra gli avvii.

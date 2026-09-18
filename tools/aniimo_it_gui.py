@@ -663,7 +663,8 @@ class App:
 
     # ------------------------------------------------------------ thread worker
     def _run_worker(self, fn, label: str, *, celebrate_on_success: bool = False,
-                    info_on_success: str | None = None, refresh_after: bool = True) -> None:
+                    info_on_success: str | None = None, refresh_after: bool = True,
+                    on_success=None) -> None:
         if self.busy:
             return
         self.busy = True
@@ -685,7 +686,7 @@ class App:
                 sys.stdout = old_stdout
             self.q.put(("done", {"label": label, "code": code, "err": err,
                                 "celebrate": celebrate_on_success, "info": info_on_success,
-                                "refresh": refresh_after}))
+                                "refresh": refresh_after, "on_success": on_success}))
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -703,6 +704,8 @@ class App:
                 self.celebrate()
             if info["info"]:
                 messagebox.showinfo(APP_TITLE, info["info"])
+            if info.get("on_success"):
+                info["on_success"]()
         elif info["code"] is not None:
             self._log_line(f"! {info['label']} interrotto (codice {info['code']}). Leggi il registro.")
         if info["refresh"]:
@@ -803,7 +806,11 @@ class App:
         h = self.sec_h - 4
         patchable = [e for e in self.installs
                      if e.get("writable") and e.get("lua_ready")]
+        upd_info = (self.payload or {}).get("update") or {}
         pills: list[tuple[str, str, str, object]] = []
+        if upd_info.get("update_available") and upd_info.get("asset"):
+            pills.append((f"⬇  Aggiorna programma a v{upd_info.get('latest')}",
+                          CORAL_DARK, CORAL, self.self_update_program))
         if len(patchable) >= 2:
             pills.append(("✦✦  Applica a TUTTE le installazioni", CORAL, CORAL_DARK,
                           self.apply_to_all))
@@ -1081,6 +1088,32 @@ class App:
         webbrowser.open(((self.payload or {}).get("update") or {}).get("releases_url")
                         or "https://github.com/notorious-pizza/Aniimo-Italian-Translation/releases")
 
+    # ------------------------------------------------------------ auto-aggiornamento programma
+    def self_update_program(self) -> None:
+        if self.busy:
+            return
+        upd_info = (self.payload or {}).get("update") or {}
+        if not upd_info.get("update_available") or not upd_info.get("asset"):
+            messagebox.showinfo(APP_TITLE, "Nessun aggiornamento scaricabile al momento.")
+            return
+        latest = upd_info.get("latest")
+        if not messagebox.askokcancel(
+                "Aggiorna programma",
+                f"Scarico la versione {latest} da GitHub (verifica SHA-256)\n"
+                "e riavvio il programma da solo.\n\nLa finestra si chiuderà al termine del download."):
+            return
+
+        def job() -> int:
+            status = {k: upd_info[k] for k in ("current", "latest", "releases_url", "asset")}
+            return 0 if inst.schedule_self_update(status) else 1
+
+        def after_download() -> None:
+            self._log_line("Download pronto: chiudo la finestra per completare l'aggiornamento…")
+            self.root.after(900, self._on_close)
+
+        self._run_worker(job, "Aggiornamento programma", refresh_after=False,
+                         on_success=after_download)
+
     # ------------------------------------------------------------ musica & festa
     def toggle_music(self, force_on: bool = False) -> None:
         if not HAVE_WINSOUND:
@@ -1160,11 +1193,31 @@ def self_screenshot(root: tk.Tk, out_path: str) -> bool:
 
 def main() -> int:
     enable_dpi_awareness()
+    # fase interna di auto-aggiornamento: questo processo è il NUOVO exe scaricato
+    # e deve sostituire il vecchio prima di riaprirlo (stesso meccanismo dell'installer CLI)
+    if len(sys.argv) > 1 and sys.argv[1] == inst.UPDATE_APPLY_COMMAND:
+        import argparse  # noqa: PLC0415
+        internal = argparse.ArgumentParser(add_help=False)
+        internal.add_argument(inst.UPDATE_APPLY_COMMAND)
+        internal.add_argument("--target-exe", required=True)
+        internal.add_argument("--previous-version", default="")
+        try:
+            return inst.cmd_apply_update(internal.parse_args())
+        except Exception:  # noqa: BLE001
+            return 1
+
+    update_completed = len(sys.argv) > 1 and sys.argv[1] == inst.UPDATE_COMPLETE_COMMAND
+    previous_version = sys.argv[2] if update_completed and len(sys.argv) > 2 else ""
+
     smoke = "--smoke" in sys.argv
     foto = sys.argv[sys.argv.index("--foto") + 1] if "--foto" in sys.argv else None
     check_only = "--check" in sys.argv
     root = tk.Tk()
     app = App(root, smoke=smoke or bool(foto) or check_only, defer_status=check_only)
+    if update_completed and not smoke:
+        app._log_line(f"✓ Programma aggiornato all'ultima versione"
+                      + (f" (precedente v{previous_version})" if previous_version else "")
+                      + ".")
 
     if check_only:
         problems = app.check_overlaps()

@@ -1512,6 +1512,27 @@ def find_installer_asset(release: dict) -> dict | None:
     return None
 
 
+GUI_ASSET_NAME = "Aniimo-Centro-Controllo.exe"
+
+
+def find_asset_for(release: dict, exe_name: str) -> dict | None:
+    """Asset della release per un nome EXE. Nessun fallback incrociato:
+    la GUI non deve mai auto-sostituirsi con l'installer testuale, e viceversa."""
+    for asset in release.get("assets") or []:
+        if asset.get("name") == exe_name:
+            return asset
+    return None
+
+
+def current_asset_name() -> str:
+    """Nome dell'asset da scaricare per l'eseguibile in corsa."""
+    if getattr(sys, "frozen", False):
+        running = Path(sys.executable).name
+        if running in (INSTALLER_ASSET_NAME, GUI_ASSET_NAME):
+            return running
+    return INSTALLER_ASSET_NAME
+
+
 UPDATE_CACHE_PATH = USER_WORK_DIR / "update_check_cache.json"
 
 
@@ -1541,7 +1562,9 @@ def _load_update_cache() -> dict | None:
 def _store_update_cache(result: dict) -> None:
     try:
         UPDATE_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        payload = {k: v for k, v in result.items() if k not in ("release", "asset")}
+        # l'asset serve all'auto-aggiornamento anche a risultato in cache;
+        # "release" resta esclusa perché ingombrante
+        payload = {k: v for k, v in result.items() if k != "release"}
         UPDATE_CACHE_PATH.write_text(json.dumps({
             "ts": time.time(),
             "checked_at": time.strftime("%H:%M"),
@@ -1580,7 +1603,7 @@ def check_for_updates(silent: bool = False) -> dict:
     if latest:
         tag = str(latest.get("tag_name") or latest.get("name") or current)
         result["release"] = latest
-        result["asset"] = find_installer_asset(latest)
+        result["asset"] = find_asset_for(latest, current_asset_name())
         result["latest"] = tag
         result["releases_url"] = latest.get("html_url") or releases_url
         result["update_available"] = normalize_version(tag) > normalize_version(current)
@@ -1696,7 +1719,9 @@ def cleanup_update_cache() -> int:
     for file in updates.glob("*/*"):
         if not file.is_file() or not (
             file.name == INSTALLER_ASSET_NAME
+            or file.name == GUI_ASSET_NAME
             or file.name.startswith("Aniimo-Italian-Translation-")
+            or file.name.startswith("Aniimo-Centro-Controllo-")
             or file.name.endswith(".exe.download")
         ):
             continue
@@ -1731,7 +1756,11 @@ def apply_update_payload(
             if launch:
                 launch_kwargs: dict[str, object] = {"cwd": str(target.parent)}
                 if os.name == "nt":
-                    launch_kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
+                    # la GUI è windowed: nessuna console; l'installer CLI riapre il menu
+                    if "centro-controllo" in target.name.lower():
+                        launch_kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                    else:
+                        launch_kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
                 subprocess.Popen([str(target), *(launch_args or [])], **launch_kwargs)
             return True
         except (PermissionError, OSError) as exc:
@@ -1752,11 +1781,13 @@ def schedule_self_update(status: dict) -> bool:
         return False
     asset = status.get("asset")
     if not asset:
-        raise RuntimeError("La release più recente non contiene l'installer previsto.")
+        raise RuntimeError("La release più recente non contiene l'eseguibile previsto.")
     tag = re.sub(r"[^A-Za-z0-9._-]+", "_", str(status.get("latest") or "latest"))
     attempt = f"{os.getpid()}-{int(time.time() * 1000)}"
-    downloaded = USER_WORK_DIR / "updates" / tag / f"Aniimo-Italian-Translation-{attempt}.exe"
-    print("Scarico il nuovo installer da GitHub...")
+    asset_name = str(asset.get("name") or INSTALLER_ASSET_NAME)
+    stem = asset_name[:-4] if asset_name.lower().endswith(".exe") else asset_name
+    downloaded = USER_WORK_DIR / "updates" / tag / f"{stem}-{attempt}.exe"
+    print("Scarico la nuova versione da GitHub...")
     verified_hash = download_update_asset(asset, downloaded)
     print("Download verificato (SHA-256):", verified_hash.upper())
     creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
