@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.11 - 2026-09-19
+
+- **Hint «aggiorna il programma» sui blocchi tecnici residui** (commit `1025f60`): quando una build futura presenterà risorse native realmente cambiate, il blocco d'installazione ora indica l'uscita («aggiorna questo programma dalle Release di GitHub e riprova») invece di lasciare il messaggio interpretabile come «gioco non supportato» — l'episodio della 3551601 ha mostrato che gli utenti su EXE vecchi lo leggevano così. Stessa indicazione nella card GUI «⚠ Build da verificare».
+- Tre regression test end-to-end per le tre condizioni font (ri-bundlata = avviso, mancante = blocco, cambiata = blocco con hint): suite Windows 87 passed.
+- Verifica bytecode dei EXE v0.4.10 (CArchive/PyZ smontati): policy font confermata dentro entrambi gli eseguibili rilasciati.
+- Testi della traduzione invariati.
+
 ## 0.4.10 - 2026-09-18
 
 - **Supporto alla build 3551601**: NetEase ha aggiornato il client Steam (3544783 → 3551601) ribundlando le risorse: **testi ufficiali invariati** (0 stringhe nuove/modificate su 112.187, verificato per contenuto) ma bundle font con nuovi hash. La build è aggiunta alle supportate.
