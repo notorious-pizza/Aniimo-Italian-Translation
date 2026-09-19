@@ -2306,7 +2306,11 @@ def build_patch(paths: GamePaths, target_langs: list[str], force: bool) -> tuple
                     "Risorse native mancanti: il download del gioco non è completo. "
                     "Avvia il gioco (o il launcher) e lascia finire il download, poi riprova."
                 )
-            raise RuntimeError("Risorse native cambiate: questa build richiede una nuova verifica.")
+            raise RuntimeError(
+                "Risorse native cambiate: questa build richiede una nuova verifica. "
+                "Aggiorna questo programma dalle Release di GitHub e riprova: "
+                "una build nuova spesso richiede un installer aggiornato."
+            )
         if "native_font_unverified" in tech.get("warnings", []):
             print("Avviso: i bundle font di questa build non sono nella lista verificata.")
             print("Il testo è comunque compatibile al 100%; dopo l'installazione controlla")

@@ -934,7 +934,7 @@ class App:
                                     "dopo l'applicazione controlla gli accenti in gioco", SUN)
             elif res_issue == "native_font_changed":
                 self.card_align.set("⚠ Build da verificare",
-                                    "risorse native non riconosciute", SUN)
+                                    "risorse native non riconosciute: aggiorna il programma", SUN)
             elif unknown:
                 self.card_align.set(f"⚠ {unknown} stringhe nuove", "restano in inglese (fallback)", CORAL)
             elif aligned:
