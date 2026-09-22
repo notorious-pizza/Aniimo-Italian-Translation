@@ -927,8 +927,14 @@ class App:
             if not sel.get("lua_ready"):
                 self.card_align.set("Dati non scaricati", "avvia questa copia del gioco una volta", SUN)
             elif res_issue == "native_font_missing":
-                self.card_align.set("⚠ Download incompleto",
-                                    "avvia il gioco e lascia finire lo scaricamento", CORAL)
+                counts = sel.get("uab_counts") or inst.uab_root_counts(Path(sel["path"]))
+                parts = [f"{k.split('uab')[-1] or k}: {'assente' if v < 0 else str(v)}"
+                         for k, v in counts.items()]
+                self._log_line("Diagnostica bundle uab — " + " · ".join(parts))
+                self._log_line("Report completo: cartella dell'EXE → "
+                               "Aniimo-Italian-Translation.exe doctor")
+                self.card_align.set("⚠ Risorse non trovate",
+                                    "nessun bundle uab: vedi registro attività", CORAL)
             elif res_issue == "native_font_unverified":
                 self.card_align.set("⚠ Font da riverificare",
                                     "dopo l'applicazione controlla gli accenti in gioco", SUN)
@@ -952,8 +958,8 @@ class App:
                 self._set_hero("Questa copia non ha ancora scaricato i dati del gioco: "
                                "avviala una volta, poi applica la traduzione", HERO_WARN)
             elif sel.get("resources_issue") == "native_font_missing":
-                self._set_hero("⚠ Download del gioco non completo su questa copia: "
-                               "avviala e lascia finire lo scaricamento, poi riprova", HERO_BAD)
+                self._set_hero("⚠ Nessuna risorsa bundle trovata su questa copia: "
+                               "avvia il gioco e riprova — se persiste, vedi il registro (diagnostica)", HERO_BAD)
             elif sel.get("resources_issue") == "native_font_unverified":
                 self._set_hero("Testo compatibile · font di questa build non ancora riverificati: "
                                "applica e controlla in gioco le lettere accentate", HERO_WARN)
@@ -1009,9 +1015,10 @@ class App:
             return False
         if sel.get("resources_issue") == "native_font_missing":
             messagebox.showinfo(APP_TITLE,
-                                "Il download del gioco non è completo su questa copia:\n"
-                                "avviala (o il launcher) e lascia finire lo scaricamento,\n"
-                                "poi premi ↻ Aggiorna stato e riprova.")
+                                "Nessuna risorsa bundle trovata su questa copia.\n"
+                                "1) Avvia il gioco e lascia finire eventuali scaricamenti.\n"
+                                "2) Se persiste, copia la diagnostica dal registro attività\n"
+                                "   (o esegui 'Aniimo-Italian-Translation.exe doctor').")
             return False
         return True
 

@@ -715,6 +715,9 @@ def describe_installation(game_dir: Path, source: str | None = None) -> dict:
         entry["resources_issue"] = (tech.get("issues") or tech.get("warnings") or [None])[0]
     except Exception:  # noqa: BLE001
         entry["resources_issue"] = None
+    if entry["resources_issue"] == "native_font_missing":
+        # diagnostica pronta per il log/doctor senza costi quando tutto è a posto
+        entry["uab_counts"] = uab_root_counts(game_dir)
     return entry
 
 
@@ -1979,13 +1982,39 @@ def patch_font_bundle(source: Path, destination: Path) -> dict:
     }
 
 
+UAB_ROOT_RELS = (
+    Path(r"Aniimo_Data\cvs\res\uab"),
+    Path(r"Aniimo_Data\StreamingAssets\cvs\res\uab"),
+    Path(r"worldx_Data\StreamingAssets\cvs\res\uab"),
+)
+
+
 def _overlay_has_any_bundle(game_dir: Path) -> bool:
-    """True se l'area bundle esiste e contiene risorse (download completato)."""
-    for rel in FONT_CACHE_RELS:
-        cache = game_dir / rel
-        if cache.is_dir() and any(cache.rglob("*.uab")):
-            return True
+    """True se un'area risorse uab esiste e contiene bundle (download completato).
+
+    Cerca sotto le radici uab e non solo in DefaultPackage\\CacheBundleFiles:
+    build diverse possono organizzare i bundle in cartelle diverse.
+    """
+    for rel in UAB_ROOT_RELS:
+        try:
+            root = game_dir / rel
+            if root.is_dir() and any(root.rglob("*.uab")):
+                return True
+        except OSError:
+            continue
     return False
+
+
+def uab_root_counts(game_dir: Path) -> dict[str, int]:
+    """Diagnostica: numero di bundle uab per radice (-1 = cartella assente)."""
+    out: dict[str, int] = {}
+    for rel in UAB_ROOT_RELS:
+        try:
+            root = game_dir / rel
+            out[str(rel)] = sum(1 for _ in root.rglob("*.uab")) if root.is_dir() else -1
+        except OSError:
+            out[str(rel)] = -1
+    return out
 
 
 def technical_compatibility_status(paths: GamePaths) -> dict:
@@ -2503,6 +2532,62 @@ def cmd_list(_args: argparse.Namespace) -> int:
             writable += " · dati non scaricati: avvia il gioco una volta"
         print(f"  {i}. [{labels.get(entry['source'], entry['source'])}] {entry['path']}")
         print(f"     build {entry.get('update') or '?'} · traduzione: {tr_txt} · {writable}")
+    return 0
+
+
+def doctor_report(game_dir: Path) -> str:
+    """Report diagnostica leggibile per una installazione (sola lettura)."""
+    lines: list[str] = []
+    entry = describe_installation(game_dir)
+    source_labels = {"steam": "Steam", "standalone": "Standalone/Launcher",
+                     "msstore": "Microsoft Store", "manuale": "Manuale"}
+    lines.append(f"Percorso   : {game_dir}")
+    lines.append(f"Sorgente   : {source_labels.get(entry['source'], entry['source'])} · "
+                 f"build {entry.get('update') or '?'} · revisione {entry.get('revision') or '?'}")
+    lines.append(f"Scrivibile : {'sì' if entry.get('writable') else 'NO'} · "
+                 f"archivio lua: {'presente' if entry.get('lua_ready') else 'ASSENTE (gioco mai avviato)'}")
+    tr = entry.get("translation_installed")
+    tr_txt = "installata" if tr is True else "non installata" if tr is False else "incerto"
+    if entry.get("installed_translation_version") and tr is True:
+        tr_txt += f" (v{entry['installed_translation_version']})"
+    lines.append(f"Traduzione : {tr_txt}")
+    verdict = {
+        None: "ok / nessuna segnalazione",
+        "native_font_unverified": "AVVISO: bundle font non in whitelist (installabile, controlla gli accenti in gioco)",
+        "native_font_changed": "BLOCCO: risorse native cambiate (aggiorna il programma)",
+        "native_font_missing": "BLOCCO: nessun bundle uab rilevato (download incompleto o layout sconosciuto)",
+        "native_font_manifest": "BLOCCO: manifest font mancante nel programma (aggiorna il programma)",
+    }.get(entry.get("resources_issue"), str(entry.get("resources_issue")))
+    lines.append(f"Risorse    : {verdict}")
+    for rel, count in (entry.get("uab_counts") or uab_root_counts(game_dir)).items():
+        state = "cartella assente" if count < 0 else f"{count} bundle"
+        lines.append(f"  uab {rel}: {state}")
+        if count > 0:
+            root = game_dir / Path(rel)
+            samples = sorted(root.rglob("*.uab"))[:5]
+            for sample in samples:
+                lines.append(f"    es. {sample.relative_to(game_dir)}")
+    return "\n".join(lines)
+
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    if args.game_dir:
+        targets = [Path(args.game_dir)]
+    else:
+        installs = list_game_installations()
+        if not installs:
+            print("Nessuna installazione trovata: usa --game-dir per indicarne una.")
+            return 1
+        targets = [e["path"] for e in installs]
+    labels = 0
+    for game_dir in targets:
+        labels += 1
+        print("=" * 58)
+        print(doctor_report(game_dir))
+    if labels > 1:
+        print("=" * 58)
+        print(f"Installazioni esaminate: {labels}")
+    print("Diagnostica di sola lettura: nessun file di gioco è stato modificato.")
     return 0
 
 
@@ -3149,6 +3234,8 @@ def main() -> int:
     check.set_defaults(func=cmd_check)
     listing = sub.add_parser("list", help="List all detected Aniimo installations")
     listing.set_defaults(func=cmd_list)
+    doctor = sub.add_parser("doctor", parents=[common], help="Read-only diagnostics for troubleshooting")
+    doctor.set_defaults(func=cmd_doctor)
     install = sub.add_parser("install", parents=[common], help="Install Italian translation")
     install.add_argument("--target", default="en", choices=["en"], help="Language slot used by the Italian translation")
     install.add_argument("--also-english", action="store_true", help=argparse.SUPPRESS)

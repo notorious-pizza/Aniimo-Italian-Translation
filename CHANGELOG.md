@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.12 - 2026-09-19
+
+- **Fix falso «download incompleto»**: il rilevamento delle risorse ora cerca i bundle uab sotto **tutte le radici** (`Aniimo_Data\cvs\res\uab`, `Aniimo_Data\StreamingAssets\…`, `worldx_Data\StreamingAssets\…`) invece delle sole cartelle `DefaultPackage\CacheBundleFiles` — build che organizzano i bundle diversamente non vengono più scambiate per download incompleti (caso reale: secondo PC con gioco avviato e verifica file a posto, bloccato per layout diverso). Il blocco duro resta solo quando non c'è nessun bundle da nessuna parte.
+- **Nuovo comando `doctor`** (`Aniimo-Italian-Translation.exe doctor`): diagnostica di sola lettura per installazione — build/revisione, archivio lua, stato traduzione, verdetto risorse e conteggio bundle per radice con esempi di percorsi. La GUI, al blocco «risorse non trovate», scrive gli stessi conteggi nel registro e indica come eseguire doctor.
+
 ## 0.4.11 - 2026-09-19
 
 - **Hint «aggiorna il programma» sui blocchi tecnici residui** (commit `1025f60`): quando una build futura presenterà risorse native realmente cambiate, il blocco d'installazione ora indica l'uscita («aggiorna questo programma dalle Release di GitHub e riprova») invece di lasciare il messaggio interpretabile come «gioco non supportato» — l'episodio della 3551601 ha mostrato che gli utenti su EXE vecchi lo leggevano così. Stessa indicazione nella card GUI «⚠ Build da verificare».
