@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.0 - 2026-09-23
+
+- **Traduzione allineata alla build 3584014**: 837 stringhe (111 nuove + 726 modificate da NetEase) tradotte in parallelo da quattro agenti AI seguendo il brief di stile del progetto; 91 chiavi rimosse dal gioco potate dal catalogo. Copertura 112.207/112.207 verificata (pairing SHA-256 perfetto, fingerprint manifest OK).
+- Unificazione automatica delle 74 collisioni stesso-inglese tra batch (maggioranza + override mirato «Rainbow→Arcobaleno»); convergenza confermata sulle rese «Fantasma ·» (chip) vs «Illusorio» (feature).
+- **Kit di aggiornamento autonomo**: `tools/aggiorna_traduzione.py` (estrai/unisci/verifica, con potatura chiavi obsolete e aggiornamento manifest), `tools/pubblica_release.py` (build+collaudo+release GitHub in un comando), `GUIDA_TRADUZIONE.md` (brief completo per umani e agenti). Il ciclo patch→traduzione→release è ora ripetibile in autonomia.
+- Test `test_final_delivery` reso indipendente dal totale cablato (ora deriva dal manifest: le prossime patch non lo rompono).
+
 ## 0.4.12 - 2026-09-19
 
 - **Fix falso «download incompleto»**: il rilevamento delle risorse ora cerca i bundle uab sotto **tutte le radici** (`Aniimo_Data\cvs\res\uab`, `Aniimo_Data\StreamingAssets\…`, `worldx_Data\StreamingAssets\…`) invece delle sole cartelle `DefaultPackage\CacheBundleFiles` — build che organizzano i bundle diversamente non vengono più scambiate per download incompleti (caso reale: secondo PC con gioco avviato e verifica file a posto, bloccato per layout diverso). Il blocco duro resta solo quando non c'è nessun bundle da nessuna parte.
